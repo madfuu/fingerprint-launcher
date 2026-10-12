@@ -1,7 +1,7 @@
 # Implement — fingerprint-chromium GUI 启动器
 
 > 执行计划。需求见 `prd.md`，设计见 `design.md`，研究依据见 `research/`。
-> 每个阶段：实现 → 本机开发循环检查全绿 → trellis-check 审查 → 本地提交 → 推送 → GitHub Actions 全绿（以 CI 结果为准）。
+> 每个阶段：实现 → 本机开发循环检查全绿 → trellis-check 审查 → 本地提交。**只在里程碑推送**，以该次 GitHub Actions 结果为准（见「推送与 CI」）。
 
 ## 通用约定
 
@@ -44,8 +44,12 @@ npm run check     # = typecheck + lint + test(vitest) + build(vite)
 
 - 远端：`git@github.com:madfuu/fingerprint-launcher.git`（公开仓库，用户已创建并添加 Deploy key）
 - 凭据：仓库级 Deploy key `~/.ssh/fingerprint_launcher_deploy`，已通过本仓库 `core.sshCommand` 指定；**不要**改 `~/.ssh/config`
-- 每阶段提交后推送 `main`；用户已同意按阶段推送
-- 结果查询：公开仓库可匿名调用 `GET https://api.github.com/repos/madfuu/fingerprint-launcher/actions/runs?head_sha=<sha>` 取 run 状态与各 job / step 的结论（匿名限额 60 次/小时，轮询间隔 ≥ 60 s）。CI 用带 problem matcher 的 Rust 工具链 action，让编译错误以 annotation 形式出现，可经 check-runs annotations API 匿名读取。拿不到完整日志时请用户贴出
+- **控制 Actions 用量（用户要求，2026-10-13）**：频繁触发 Actions 可能被 GitHub 判定滥用、封禁账号。因此：
+  - **只在里程碑推送**：P3 完成后（第一批平台相关代码，需要 Windows / macOS 原生验证）、P6 完成后（交给用户看外观之前）、P10 之后、P11 发布前。其余阶段只做本地提交
+  - CI 失败时先在本地复现、尽量一次修完再推送；同一问题的修复推送间隔不短于上一次 run 完成后的分析时间，连续失败 3 次则停止推送，记录问题后继续后续阶段（用户决定）
+  - `bundle`（三平台打包，最耗时）只在推 `v*` tag、手动触发、或 head commit 信息含 `[bundle]` 时运行；需要验证打包时才在提交信息里加 `[bundle]`
+  - `.trellis/`、`.claude/`、`*.md`、`LICENSE` 的改动不触发 CI（`paths-ignore`）
+- 结果查询：公开仓库可匿名调用 `GET https://api.github.com/repos/madfuu/fingerprint-launcher/actions/runs?head_sha=<sha>` 取 run 状态与各 job / step 的结论（匿名限额 60 次/小时，轮询间隔 ≥ 60 s）；封装为 `~/.cache/fpl-tools/ci-status.sh <sha> [--annotations]`。CI 用带 problem matcher 的 Rust 工具链 action，让编译错误以 annotation 形式出现，可经 check-runs annotations API 匿名读取。拿不到完整日志时请用户贴出
 
 **回滚**：每阶段一个提交。阶段内失败就地修；需要回退已推送的提交时用 `git revert`，不改写远端历史；本地 `git reset --hard` 先征得用户同意。
 

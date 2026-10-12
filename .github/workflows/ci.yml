@@ -1,9 +1,22 @@
 name: CI
 
+# Keep Actions usage low: docs-only changes don't run CI, and the heavy bundle job only runs
+# on demand (see `bundle.if`).
 on:
   push:
     branches: [main]
+    tags: ['v*']
+    paths-ignore:
+      - '.trellis/**'
+      - '.claude/**'
+      - '**/*.md'
+      - LICENSE
   pull_request:
+    paths-ignore:
+      - '.trellis/**'
+      - '.claude/**'
+      - '**/*.md'
+      - LICENSE
   workflow_dispatch:
 
 permissions:
@@ -79,6 +92,12 @@ jobs:
   bundle:
     name: bundle (${{ matrix.os }})
     needs: check
+    # Installers take the bulk of the CI minutes, so build them only for tags, manual runs, or a
+    # push whose head commit message contains `[bundle]`.
+    if: >-
+      startsWith(github.ref, 'refs/tags/') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[bundle]'))
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
