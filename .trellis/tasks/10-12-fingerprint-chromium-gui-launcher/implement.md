@@ -160,13 +160,13 @@ npm run check
 
 ## P3 进程管理 ★ 高风险
 
-- [ ] 依赖：Unix `nix`（`signal`、`process`）；Windows `windows`（features 见 design §4.4）
-- [ ] `kernel/process/{mod,unix,windows}.rs`：spawn（Unix `process_group(0)`；Windows Job Object）、温和停止、强制停止（design §4.3）
-- [ ] `kernel/lock.rs`：单实例锁检测（design §4.2 第 2 步）
-- [ ] `kernel/probe.rs`：分平台版本探测（design §5）；Linux 两种形态都实现，Windows / macOS 实现在 `cfg` 分支内
-- [ ] `services/launcher.rs`：`AppState.running`、waiter 状态机（design §4.2 表格）、stderr 环形缓冲 + 日志文件、错误识别（sandbox / libfuse）、批量启动信号量（design §4.6）、`StatusSink` 与 `LauncherConfig` 注入（design §4.1）
-- [ ] `tests/fixtures/fake-chrome.sh`：按环境变量切换行为——正常常驻并派生一个子进程；忽略 SIGTERM；启动即带 stderr 非 0 退出；写 `SingletonLock` 指向自身；把收到的 argv 写入文件
-- [ ] 集成测试（Unix，用假内核，`LauncherConfig` 时间常量调短）：
+- [x] 依赖：Unix `nix`（`signal`、`process`）；Windows `windows`（features 见 design §4.4）
+- [x] `kernel/process/{mod,unix,windows}.rs`：spawn（Unix `process_group(0)`；Windows Job Object）、温和停止、强制停止（design §4.3）
+- [x] `kernel/lock.rs`：单实例锁检测（design §4.2 第 2 步）
+- [x] `kernel/probe.rs`：分平台版本探测（design §5）；Linux 两种形态都实现，Windows / macOS 实现在 `cfg` 分支内
+- [x] `services/launcher.rs`：`AppState.running`、waiter 状态机（design §4.2 表格）、stderr 环形缓冲 + 日志文件、错误识别（sandbox / libfuse）、批量启动信号量（design §4.6）、`StatusSink` 与 `LauncherConfig` 注入（design §4.1）
+- [x] `tests/fixtures/fake-chrome.sh`：按环境变量切换行为——正常常驻并派生一个子进程；忽略 SIGTERM；启动即带 stderr 非 0 退出；写 `SingletonLock` 指向自身；把收到的 argv 写入文件（实际由 `tests/launcher/fake.rs` 实现，见下方偏差）
+- [x] 集成测试（Unix，用假内核，`LauncherConfig` 时间常量调短）：
   - 启动 → `Starting` → `Running`；argv 与 `build_launch_plan` 一致
   - 温和停止 → `Stopped`，且进程组内无存活进程（`killpg(pgid, 0)` 返回 ESRCH）（A6）
   - 忽略 SIGTERM 的内核 → 宽限期后被强制终止，进程组清空
@@ -177,8 +177,8 @@ npm run check
   - 存活的外部 `SingletonLock` → 拒绝；陈旧锁（pid 已死）→ 放行
   - 批量启动：同时 `Starting` 数不超过上限（A8）
   - 停止全部（`quitApp` 的服务层部分）后无残留（A7）
-- [ ] 真 Chromium 测试（`#[ignore]`，`FPL_TEST_CHROME` 指向 `~/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`，参数加 `--headless=new`）：启动、温和停止后无残留、两个 profile 目录互不干扰（A9）、真实 `SingletonLock` 被识别
-- [ ] Windows 分支：Job Object、`WM_CLOSE`、PE 版本、`lockfile` 的 `cfg(windows)` 代码由 CI 的 `windows-latest` 原生 clippy + test 验证。为此写 `#[cfg(windows)]` 测试：用一个跨平台的 Rust 假内核（`examples/fake_chrome.rs`：常驻、派生子进程、按参数决定是否早退），验证 Job Object 整树终止与早退检测；Unix 侧的同类测试照常用 `fake-chrome.sh`。macOS runner 原生跑 Unix 测试，覆盖 macOS 的进程组行为
+- [x] 真 Chromium 测试（`#[ignore]`，`FPL_TEST_CHROME` 指向 `~/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`，参数加 `--headless=new`）：启动、温和停止后无残留、两个 profile 目录互不干扰（A9）、真实 `SingletonLock` 被识别
+- [x] Windows 分支：Job Object、`WM_CLOSE`、PE 版本、`lockfile` 的 `cfg(windows)` 代码由 CI 的 `windows-latest` 原生 clippy + test 验证。为此写 `#[cfg(windows)]` 测试：用一个跨平台的 Rust 假内核（`examples/fake_chrome.rs`：常驻、派生子进程、按参数决定是否早退），验证 Job Object 整树终止与早退检测；Unix 侧的同类测试照常用 `fake-chrome.sh`。macOS runner 原生跑 Unix 测试，覆盖 macOS 的进程组行为（实际三平台共用 `tests/launcher` 的同一个假内核；Windows 专属断言见 `cases.rs` 中的 `cfg(windows)` 分支与 `kernel/lock.rs`、`kernel/probe/pe.rs` 的 Windows 单元测试）
 
 **验证**：
 
@@ -188,6 +188,18 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 ```
 
 **审查关卡**：主会话审阅 waiter 状态机与停止流程，确认状态变更只有一条路径、无竞态（停止与自然退出同时发生、批量中途停止）。
+
+结果（实现 agent，2026-10-13）：本机 lib 108 个单元测试 + 16 个假内核生命周期测试 + 3 个真 Chromium 测试（`--ignored`，沙箱可用，无需 `--no-sandbox`）全部通过；假内核测试连续 5 次、3 路并发、8 核满载下各跑通。Windows / macOS 分支本机未编译，首次验证在 CI。
+
+偏差（均为减少本机无法编译的平台代码）：
+
+- 假内核不用 `fake-chrome.sh` / `examples/fake_chrome.rs`：集成测试 `tests/launcher/`（`harness = false`）的二进制自身兼任假内核（带 `--user-data-dir=` 启动即扮演浏览器，行为由 `<udd>/fake.cfg` 配置），三平台同一份代码；自带一个兼容 `--ignored` / 过滤参数的小型测试运行器（带 300 s 看门狗：挂起的测试使运行失败并列出名称，而不是占住 CI runner 直到作业超时）。
+- Windows 依赖用 `windows-sys` 0.61（已在依赖树中，FFI 签名逐项核对源码），不用 `windows` crate；温和停止用 `taskkill /PID`（不带 `/F`、`/T`，即投递 `WM_CLOSE`），不手写 `EnumWindows` + `PostMessageW`；因此不需要 `Win32_UI_WindowsAndMessaging` / `Win32_Storage_FileSystem`。
+- 版本探测按文件类型而非宿主 OS 选择方法，全部为可移植代码：PE 版本资源自写解析（`pelite` 依赖陈旧）；macOS 用 `plist` crate（tauri-utils 已依赖）；夹具为 mingw 生成的 4 KB PE（`tests/fixtures/pe/`）。
+- `nix` features 为 `signal` + `hostname`（`signal` 已隐含 `process`）。
+- 运行表用 `std::sync::Mutex`（临界区内无 await），由 `services::launcher::Launcher` 持有，而非 design §4.1 的 `AppState.running: tokio::sync::Mutex`；`AppState` 与 `exiting` 标志留给 P4。
+- `StatusSink` 为两个方法（状态 / 批量进度）；`batch://progress` 增加 `skipped`。
+- 每次主进程退出后都对整棵进程树补杀一次（Unix `killpg`，Windows `TerminateJobObject`），回收外部 kill 主进程或崩溃后遗留的子进程。
 
 **提交**：`feat(launcher): process lifecycle, singleton lock, version probe`
 
@@ -204,7 +216,10 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 - [ ] `testProxy`：`reqwest`（`rustls-tls`、`socks`），ipinfo → ip-api 回退，10 s 超时
 - [ ] `detectKernels`：`research/fingerprint-chromium-cli.md` §8 的候选位置
 - [ ] 导入 / 导出（design §5 细则）
-- [ ] `StatusSink` 的 Tauri 实现
+- [ ] `StatusSink` 的 Tauri 实现。**约束（P3 审查）**：sink 在启动器的运行表锁内被调用——只能向前端 emit，不得访问数据库（会与命令层的锁顺序相反），也不得注册会回调启动器的 Rust 侧 `listen`（Tauri 在 `emit` 内同步执行它们，std `Mutex` 不可重入）
+- [ ] 保存时的「两个 profile 共用同一自定义 user-data-dir」检查：路径先规范化（Windows 下大小写折叠）再比较；P3 的运行时检查只覆盖已在运行的 profile
+- [ ] `addKernel` 选中 `.app` 目录时先用 `kernel::probe::bundle_executable` 解析出内部可执行文件，再做可执行检查与版本探测
+- [ ] （可选）单次运行中 profile 日志无上限增长（只在启动时截断到 5 MB 以内）：如有需要改为运行中按大小轮转
 - [ ] 测试：导入导出往返；`purgeProfile(dropUserData)` 不删除 `user_data_root` 之外的目录
 - [ ] `previewCommand` 在没有任何内核时：用占位程序名 `chrome` 构造临时 `Kernel`，参数集按 `effective_major(None)`（最新）；`validateProfileForKernel` 同理
 - [ ] 命令层策略（P1 审查遗留）：删除（软删除 / 永久删除）运行中的 profile 时拒绝，错误码 `profile_running`；两个 profile 指向同一个自定义 user-data-dir 时保存即报 `conflict`；`testProxy` 的 URL 同样要给 IPv6 主机加方括号

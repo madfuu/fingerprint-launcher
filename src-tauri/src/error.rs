@@ -21,6 +21,22 @@ pub enum ErrorCode {
     Db,
     /// Filesystem failure.
     Io,
+    /// The profile has no kernel and no default kernel is configured.
+    NoKernel,
+    /// The kernel executable does not exist.
+    KernelMissing,
+    /// The kernel path exists but is not an executable file.
+    KernelNotExecutable,
+    /// The profile is already running (or being launched) in this launcher.
+    ProfileRunning,
+    /// A browser started outside the launcher holds the profile's user data directory.
+    ProfileRunningExternally,
+    /// The OS refused to start the kernel process.
+    SpawnFailed,
+    /// The browser exited during startup (status events only, design §4.2).
+    StartupFailed,
+    /// The launcher is stopping every browser because the app is quitting.
+    ShuttingDown,
 }
 
 impl ErrorCode {
@@ -32,6 +48,14 @@ impl ErrorCode {
             Self::InvalidInput => "invalid_input",
             Self::Db => "db",
             Self::Io => "io",
+            Self::NoKernel => "no_kernel",
+            Self::KernelMissing => "kernel_missing",
+            Self::KernelNotExecutable => "kernel_not_executable",
+            Self::ProfileRunning => "profile_running",
+            Self::ProfileRunningExternally => "profile_running_externally",
+            Self::SpawnFailed => "spawn_failed",
+            Self::StartupFailed => "startup_failed",
+            Self::ShuttingDown => "shutting_down",
         }
     }
 }
@@ -124,6 +148,14 @@ mod tests {
             ErrorCode::InvalidInput,
             ErrorCode::Db,
             ErrorCode::Io,
+            ErrorCode::NoKernel,
+            ErrorCode::KernelMissing,
+            ErrorCode::KernelNotExecutable,
+            ErrorCode::ProfileRunning,
+            ErrorCode::ProfileRunningExternally,
+            ErrorCode::SpawnFailed,
+            ErrorCode::StartupFailed,
+            ErrorCode::ShuttingDown,
         ] {
             assert_eq!(serde_json::to_value(code).unwrap(), code.as_str());
         }

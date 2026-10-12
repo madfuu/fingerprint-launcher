@@ -258,7 +258,7 @@ pub struct AppState {
 
 - 所有命令声明为 `async`：非 async 的 Tauri 命令在主线程执行，会卡 UI。
 - DB 调用包在 `tokio::task::spawn_blocking` 内，不在 async 上下文中持锁做 IO。
-- 启动器服务不直接依赖 `AppHandle`：状态事件经 `trait StatusSink { fn emit(&self, ev: StatusEvent) }` 发出。生产实现转发为 Tauri 事件，测试实现写入 channel——这样进程生命周期可以脱离 Tauri 运行时做集成测试（§10）。宽限期等时间常量经 `LauncherConfig` 注入，测试中可调短。
+- 启动器服务不直接依赖 `AppHandle`：状态事件经 `trait StatusSink { fn status_changed(&self, ev: StatusEvent); fn batch_progress(&self, p: BatchProgress) }` 发出（P3 落定；在持有运行表锁时调用，以保证事件顺序与运行表一致，实现必须立即返回、不得回调启动器）。生产实现转发为 Tauri 事件，测试实现写入 channel——这样进程生命周期可以脱离 Tauri 运行时做集成测试（§10）。宽限期等时间常量经 `LauncherConfig` 注入，测试中可调短。
 
 ### 4.2 启动流程
 
@@ -305,7 +305,7 @@ waiter 的状态推进：
 
 Simprint 的 Unix 侧是 no-op（`job.rs`），本项目不照搬——否则 A6 在 Linux 上过不了。Unix 下启动器崩溃会留孤儿，由 §4.2 第 2 步的锁检查兜底。
 
-依赖：Unix `nix`（`signal`、`process` features）；Windows `windows` crate（`Win32_Foundation`、`Win32_Security`、`Win32_System_JobObjects`、`Win32_System_Threading`、`Win32_UI_WindowsAndMessaging`、`Win32_Storage_FileSystem`）。`Win32_Security` 不能省：`CreateJobObjectW` 的参数类型 `SECURITY_ATTRIBUTES` 在该 feature 下，缺了它函数根本不会生成（已用 0.61 交叉检查实测）。
+依赖（P3 落定）：Unix `nix`（`signal`、`hostname` features；`signal` 隐含 `process`）；Windows `windows-sys` 0.61（`Win32_Foundation`、`Win32_Security`、`Win32_System_JobObjects`、`Win32_System_Threading`）。`Win32_Security` 不能省：`CreateJobObjectW` 的参数类型 `SECURITY_ATTRIBUTES` 在该 feature 下，缺了它函数根本不会生成；`JOBOBJECT_EXTENDED_LIMIT_INFORMATION` 由 `Win32_System_Threading` 门控。温和停止用 `taskkill /PID <pid>`（不带 `/F`，即向其窗口投递 `WM_CLOSE`，`CREATE_NO_WINDOW` 启动），版本探测为可移植的 PE / plist 解析，故不需要 `Win32_UI_WindowsAndMessaging`、`Win32_Storage_FileSystem`。
 
 ### 4.5 应用退出（R3.5 / A7）
 
@@ -351,7 +351,7 @@ quitApp(): Promise<void>
 // 内核
 listKernels() / addKernel(path, name?, majorVersion?) / updateKernel / removeKernel(id) / setDefaultKernel(id)
 detectKernels(): Promise<KernelCandidate[]>
-probeKernel(path): Promise<{ majorVersion: number | null; fullVersion: string | null; method: string }>
+probeKernel(path): Promise<{ majorVersion: number | null; fullVersion: string | null; method: 'pe_version' | 'info_plist' | 'file_name' | 'version_flag' | null }>
 
 // 代理 / 分组 / 标签 / 设置
 listProxies() / createProxy / updateProxy / deleteProxy / testProxy(id)
@@ -365,8 +365,9 @@ showMainWindow(): Promise<void>          // 前端就绪后显示窗口
 事件（Rust → 前端）：
 
 ```ts
-'profile://status-changed'  { profileId, status, pid?, error? }
-'batch://progress'          { total, launched, failed }
+'profile://status-changed'  { profileId, status, pid?, error? }   // status: stopped|starting|running|stopping|error
+                            // error: { code, message, hint: 'no_sandbox'|'missing_fuse'|null, exitCode, stderrTail }
+'batch://progress'          { total, launched, failed, skipped }  // skipped：已在运行，或因退出而未尝试
 'app://close-requested'     { runningCount }
 ```
 
@@ -375,8 +376,9 @@ showMainWindow(): Promise<void>          // 前端就绪后显示窗口
 - `ProfileQuery`：`page / pageSize / view('all'|'running'|'trash') / groupId? / tagIds? / keyword?`，分页在 SQL 侧做。`view = running` 时以内存运行表的 id 集合过滤。
 - P1 落定的查询语义：列表按创建时间倒序，回收站按删除时间倒序；标签过滤为「命中任一所选标签」；关键字匹配名称、备注、种子（`%`、`_`、`\` 按字面匹配）；`view = running` 由调用方传入运行中 id 集合，且排除已删除。
 - 错误码（P1 落定）：`not_found`、`conflict`（唯一约束）、`invalid_input`（外键 / CHECK / 非空 / 校验失败）、`db`、`io`。P3/P4 新增的错误码在此追加。
+- 错误码（P3 新增）：`no_kernel`（profile 无内核且无默认内核）、`kernel_missing`（可执行文件不存在）、`kernel_not_executable`（不是文件 / Unix 缺执行位）、`profile_running`（已在本启动器中运行或启动中）、`profile_running_externally`（user-data-dir 被启动器外的浏览器持有）、`spawn_failed`（操作系统拒绝启动）、`startup_failed`（启动期内退出，仅出现在状态事件的 `error` 中）、`shutting_down`（退出流程中拒绝新启动）。两个运行中 profile 共用同一 user-data-dir 时启动返回 `conflict`。启动前失败（`profile_running`、`shutting_down` 除外）同时发出 `error` 状态事件。
 - `ProfileDraft` 含 `tagIds`，编辑器一次保存即可写入标签；`setProfileTags` 保留给列表页。
-- `probeKernel` 分平台（research §7）：Windows 读 PE 版本资源（`chrome.exe --version` 在 Windows 上不输出）；macOS 读 `Info.plist`；Linux AppImage 先解析文件名，再试 `--version`；tar.xz 执行 `--version`。全部失败返回 `null`，UI 要求用户手填大版本号，**不猜**。
+- `probeKernel` 按文件类型（而非宿主平台）选择方法（research §7；P3 落定，全部为可移植代码，三平台都能测）：PE 文件读版本资源（`chrome.exe --version` 在 Windows 上不输出，PE 从不执行）；`.app` 包或其 `Contents/MacOS/*` 读 `Info.plist`；`*.AppImage` 先解析文件名，再试 `--version`；其他执行 `--version`（10 s 超时）。全部失败返回 `null`，UI 要求用户手填大版本号，**不猜**。
 - `purgeProfile(dropUserData=true)` **只删除位于 `user_data_root` 之下的目录**；用户自定义到其他位置的目录永不由程序删除，只提示路径。
 - `testProxy`：经该代理请求 `https://ipinfo.io/json`（失败回退 `http://ip-api.com/json`），10 s 超时，回显出口 IP / 国家 / 城市 / 时区。仅用户点击时触发。
 - 导出 JSON 带 `formatVersion`，不含 id 与 user-data-dir（机器相关）；分组、标签以名称导出，代理以 `scheme/host/port` 导出。导入时按名称复用或新建分组/标签，按 `scheme/host/port` 复用或新建代理，profile 一律新建。

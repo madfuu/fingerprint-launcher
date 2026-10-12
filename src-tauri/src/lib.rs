@@ -3,6 +3,7 @@
 pub mod db;
 pub mod error;
 pub mod kernel;
+pub mod services;
 
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 

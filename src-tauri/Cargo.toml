@@ -27,6 +27,23 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 uuid = { version = "1.28.0", features = ["v4"] }
 chrono = "0.4.45"
 thiserror = "2.0.21"
+tokio = { version = "1.53.2", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+# Reads Info.plist of macOS kernels on every host; tauri-utils already depends on it.
+plist = "1.10.1"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30.1", features = ["hostname", "signal"] }
+
+[target.'cfg(windows)'.dependencies]
+# Job Objects (design §4.4). `Win32_Security` gates `CreateJobObjectW` (its first parameter is a
+# `SECURITY_ATTRIBUTES`); `Win32_System_Threading` gates `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`.
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+# Process lifecycle tests. No libtest harness: the test binary doubles as the fake kernel it
+# launches (see the file header), which needs its own `main`.
+[[test]]
+name = "launcher"
+harness = false
