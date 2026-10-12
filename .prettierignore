@@ -1,0 +1,12 @@
+dist
+coverage
+.screenshots
+node_modules
+package-lock.json
+src-tauri/target
+src-tauri/gen
+src-tauri/icons
+# Managed by Trellis; not formatted by this project.
+.trellis
+.claude
+AGENTS.md

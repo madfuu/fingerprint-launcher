@@ -1,0 +1,25 @@
+# Dependencies & build output
+node_modules/
+dist/
+dist-ssr/
+coverage/
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Screenshot verification output (npm run screenshots)
+.screenshots/
+
+# Logs
+*.log
+logs/
+
+# Local env overrides
+*.local
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.sw?

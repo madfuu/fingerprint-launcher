@@ -1,0 +1,24 @@
+[package]
+name = "fingerprint-launcher"
+version = "0.1.0"
+description = "Desktop GUI launcher for fingerprint-chromium profiles"
+authors = ["fingerprint-launcher contributors"]
+license = "MIT"
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+# The `_lib` suffix avoids a name clash with the binary target on Windows
+# (https://github.com/rust-lang/cargo/issues/8519).
+name = "fingerprint_launcher_lib"
+# Desktop only. The Tauri template's `staticlib` / `cdylib` outputs are for mobile targets and
+# would be linked on every build and test run.
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.2", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.3", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
