@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    # Same shell on every runner (Windows would otherwise default to pwsh).
+    shell: bash
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Tauri system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev build-essential pkg-config
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # The frontend is platform-independent, so the full check runs once.
+      - name: Frontend check (typecheck, lint, test, build)
+        if: runner.os == 'Linux'
+        run: npm run check
+
+      # `tauri::generate_context!()` embeds `dist/` at compile time, so it must exist before cargo runs.
+      - name: Build frontend
+        if: runner.os != 'Linux'
+        run: npm run build
+
+      # Registers rustc / clippy / rustfmt problem matchers and Swatinem/rust-cache.
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          components: clippy, rustfmt
+          cache-workspaces: src-tauri
+
+      - name: cargo fmt
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test
+
+  bundle:
+    name: bundle (${{ matrix.os }})
+    needs: check
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            bundles: deb,appimage
+            # Only the installers; bundle/appimage/ also keeps the intermediate *.AppDir.
+            artifacts: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
+          - os: windows-latest
+            bundles: nsis
+            artifacts: src-tauri/target/release/bundle/nsis/*.exe
+          - os: macos-latest
+            bundles: dmg
+            artifacts: src-tauri/target/release/bundle/dmg/*.dmg
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Tauri system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev build-essential pkg-config
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          cache-workspaces: src-tauri
+
+      # `beforeBuildCommand` builds the frontend with TAURI_ENV_PLATFORM set, which selects the
+      # WebView build target. The AppImage bundler runs linuxdeploy with
+      # APPIMAGE_EXTRACT_AND_RUN=1 itself, so the runner needs no FUSE.
+      - name: tauri build
+        run: npx tauri build --bundles ${{ matrix.bundles }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fingerprint-launcher-${{ runner.os }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # The app must still be running when `timeout` stops it (exit code 124).
+      - name: Smoke test under Xvfb
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          status=0
+          xvfb-run -a timeout 15 src-tauri/target/release/fingerprint-launcher || status=$?
+          if [ "$status" -ne 124 ]; then
+            echo "::error::Expected the app to still be running after 15 s (exit 124), got exit $status"
+            exit 1
+          fi
+          echo "App stayed up for 15 s under Xvfb."

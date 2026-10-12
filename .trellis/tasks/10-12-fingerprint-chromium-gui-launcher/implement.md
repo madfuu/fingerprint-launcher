@@ -86,7 +86,7 @@ npm run check
 
 前置：用户已在 GitHub 网页创建空的公开仓库 `madfuu/fingerprint-launcher`，并把 `~/.ssh/fingerprint_launcher_deploy.pub` 加为 Deploy key（勾选 Allow write access）。
 
-- [ ] `.github/workflows/ci.yml`，触发：`push`（`main`）、`pull_request`、`workflow_dispatch`
+- [x] `.github/workflows/ci.yml`，触发：`push`（`main`）、`pull_request`、`workflow_dispatch`
   - `check` job，矩阵 `ubuntu-22.04` / `windows-latest` / `macos-latest`：
     - Node LTS + `npm ci`；`npm run check` 只在 ubuntu 跑（前端与平台无关），其余平台只需 `npm run build` 产出 `dist/`
     - Rust stable + clippy + rustfmt（用带 problem matcher 的 action，如 `actions-rust-lang/setup-rust-toolchain`）+ `Swatinem/rust-cache`
@@ -307,6 +307,8 @@ CI 已在 P0b 建立，此阶段只做收尾。
 
 - [ ] 复查所有 `cfg(target_os)` 分支：Windows（Job Object、`WM_CLOSE`、PE 版本、`lockfile`）、macOS（Overlay 标题栏、plist 探测），确认 CI 三平台的 test 覆盖了它们
 - [ ] `.github/workflows/release.yml`：推送 `v*` tag 时三平台 `tauri build`，产物附到 GitHub Release（草稿）
+- [ ] macOS 签名：CI 产物未签名，下载后可能被提示「已损坏」。至少配置 ad-hoc 签名（`bundle.macOS.signingIdentity: "-"`）；`macos-latest` 为 arm64，dmg 仅支持 Apple 芯片，是否加 x86_64 / universal 由用户决定
+- [ ] 若 Actions 缓存超过 10 GB 上限导致频繁冷编译：`setup-rust-toolchain` 加 `cache-save-if: ${{ github.ref == 'refs/heads/main' }}`
 - [ ] README：安装、配置内核路径、上游限制（代理无密码验证、headless、GPU 仅 Linux）、构建方法、视觉参考致谢
 
 **验证**：
