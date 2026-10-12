@@ -456,9 +456,9 @@ src/
 - `build.target`：Windows `chrome105`，其他 `safari13`（Linux/macOS 的 WebView 是 WebKit）
 - 包管理：**npm**（本机 Node 26.8.1 / npm 11.19.0，未装 pnpm）
 - Rust：stable 1.99（rustup 经 USTC 镜像安装）；crates 经 `~/.cargo/config.toml` 的 USTC sparse 镜像拉取（本机连不上 crates.io 官方源）
-- 应用标识：productName `Fingerprint Launcher`，identifier `com.fingerprint-launcher.desktop`（首次发布前可改；发布后改会导致数据目录迁移）
+- 应用标识：productName `Fingerprint Launcher`，identifier `io.github.madfuu.fingerprint-launcher`（首次发布前可改；发布后改会导致数据目录迁移）
 - 检查：`npm run lint`（含 `eslint-plugin-i18next` 的 `no-literal-string`，`jsx-only` 模式，属性白名单排除 `className` / `variant` / `size` / `data-*` 等非文案属性，让 A10「无硬编码文案」可机检）、`npm run typecheck`、`cargo fmt --check`、`cargo clippy -D warnings`、`cargo test`、`vitest run`
-- CI：GitHub Actions（公开仓库 `<owner>/fingerprint-launcher`），矩阵 `ubuntu-22.04` / `windows-latest` / `macos-latest`，原生跑 clippy + test，再 `tauri build` 打包并上传产物；Linux 额外做 xvfb 冒烟。**CI 是权威结果**；本机只跑开发循环（typecheck / lint / vitest / Linux 上的 cargo 检查与测试），不做打包、冒烟和 Windows 交叉检查（用户决定）
+- CI：GitHub Actions（公开仓库 `madfuu/fingerprint-launcher`），矩阵 `ubuntu-22.04` / `windows-latest` / `macos-latest`，原生跑 clippy + test，再 `tauri build` 打包并上传产物；Linux 额外做 xvfb 冒烟。**CI 是权威结果**；本机只跑开发循环（typecheck / lint / vitest / Linux 上的 cargo 检查与测试），不做打包、冒烟和 Windows 交叉检查（用户决定）
 - `tauri::generate_context!()` 编译期要求 `frontendDist` 存在：任何 `cargo clippy` / `cargo test` 之前先 `npm run build`
 
 ## 9. 许可

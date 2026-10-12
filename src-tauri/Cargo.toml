@@ -2,8 +2,9 @@
 name = "fingerprint-launcher"
 version = "0.1.0"
 description = "Desktop GUI launcher for fingerprint-chromium profiles"
-authors = ["fingerprint-launcher contributors"]
+authors = ["madfuu"]
 license = "MIT"
+repository = "https://github.com/madfuu/fingerprint-launcher"
 edition = "2024"
 rust-version = "1.90"
 

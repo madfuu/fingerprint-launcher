@@ -42,10 +42,10 @@ npm run check     # = typecheck + lint + test(vitest) + build(vite)
 
 **推送与 CI**：
 
-- 远端：`git@github.com:<owner>/fingerprint-launcher.git`（公开仓库，用户在网页创建；`<owner>` 待用户确认后填入）
+- 远端：`git@github.com:madfuu/fingerprint-launcher.git`（公开仓库，用户已创建并添加 Deploy key）
 - 凭据：仓库级 Deploy key `~/.ssh/fingerprint_launcher_deploy`，已通过本仓库 `core.sshCommand` 指定；**不要**改 `~/.ssh/config`
 - 每阶段提交后推送 `main`；用户已同意按阶段推送
-- 结果查询：公开仓库可匿名调用 `GET https://api.github.com/repos/<owner>/fingerprint-launcher/actions/runs?head_sha=<sha>` 取 run 状态与各 job / step 的结论（匿名限额 60 次/小时，轮询间隔 ≥ 60 s）。CI 用带 problem matcher 的 Rust 工具链 action，让编译错误以 annotation 形式出现，可经 check-runs annotations API 匿名读取。拿不到完整日志时请用户贴出
+- 结果查询：公开仓库可匿名调用 `GET https://api.github.com/repos/madfuu/fingerprint-launcher/actions/runs?head_sha=<sha>` 取 run 状态与各 job / step 的结论（匿名限额 60 次/小时，轮询间隔 ≥ 60 s）。CI 用带 problem matcher 的 Rust 工具链 action，让编译错误以 annotation 形式出现，可经 check-runs annotations API 匿名读取。拿不到完整日志时请用户贴出
 
 **回滚**：每阶段一个提交。阶段内失败就地修；需要回退已推送的提交时用 `git revert`，不改写远端历史；本地 `git reset --hard` 先征得用户同意。
 
@@ -60,7 +60,7 @@ npm run check     # = typecheck + lint + test(vitest) + build(vite)
 - [x] `vite.config.ts`：别名 `@` → `./src`；`server.strictPort`、忽略 `src-tauri/**`；`build.target` 按 `TAURI_ENV_PLATFORM` 取 `chrome105` / `safari13`（design §8）
 - [x] `tsconfig`：strict、`noUnusedLocals`、`noUnusedParameters`、`noFallthroughCasesInSwitch`、`verbatimModuleSyntax`，`paths` 配 `@/*`
 - [x] shadcn 初始化：`components.json` 为 style `new-york`、baseColor `neutral`、`cssVariables: true`、iconLibrary `lucide`，别名 `@/components`、`@/components/ui`、`@/lib`、`@/hooks`、`@/lib/utils`
-- [x] Tauri 2：`npm i -D @tauri-apps/cli@^2` → `npx tauri init --ci`；productName `Fingerprint Launcher`，identifier `com.fingerprint-launcher.desktop`，devUrl `http://localhost:5173`，frontendDist `../dist`，`app.windows: []`（窗口在 P4 由代码创建）。Rust edition 2024
+- [x] Tauri 2：`npm i -D @tauri-apps/cli@^2` → `npx tauri init --ci`；productName `Fingerprint Launcher`，identifier `io.github.madfuu.fingerprint-launcher`，devUrl `http://localhost:5173`，frontendDist `../dist`，`app.windows: []`（窗口在 P4 由代码创建）。Rust edition 2024
 - [x] ESLint 9 flat config：typescript-eslint、react-hooks、react-refresh、`eslint-plugin-i18next`（`no-literal-string`，`mode: 'jsx-only'`，排除 `*.test.*` 与 `bridge.mock.ts`）；Prettier `{ singleQuote: true, semi: true, printWidth: 100, trailingComma: 'es5' }`
 - [x] vitest + jsdom + @testing-library/react
 - [x] npm scripts：`dev`、`build`、`typecheck`、`lint`、`format`、`test`、`check`、`tauri`
@@ -84,7 +84,7 @@ npm run check
 
 ## P0b CI 工作流与首次推送
 
-前置：用户已在 GitHub 网页创建空的公开仓库 `<owner>/fingerprint-launcher`，并把 `~/.ssh/fingerprint_launcher_deploy.pub` 加为 Deploy key（勾选 Allow write access）。
+前置：用户已在 GitHub 网页创建空的公开仓库 `madfuu/fingerprint-launcher`，并把 `~/.ssh/fingerprint_launcher_deploy.pub` 加为 Deploy key（勾选 Allow write access）。
 
 - [ ] `.github/workflows/ci.yml`，触发：`push`（`main`）、`pull_request`、`workflow_dispatch`
   - `check` job，矩阵 `ubuntu-22.04` / `windows-latest` / `macos-latest`：
@@ -94,7 +94,7 @@ npm run check
     - `cargo fmt --check`（仅 ubuntu）、`cargo clippy --all-targets -- -D warnings`、`cargo test`
   - `bundle` job（`needs: check`），同一矩阵：`tauri build`（Linux `deb` + `appimage`，Windows `nsis`，macOS `dmg`），`actions/upload-artifact` 上传安装包；ubuntu 额外对产物二进制做 `xvfb-run` 15 s 冒烟（期望退出码 124）
   - `concurrency` 按分支取消过时的运行
-- [ ] 添加远端 `origin` = `git@github.com:<owner>/fingerprint-launcher.git`，`git ls-remote origin` 验证 Deploy key 可用后推送 `main`（包含 P0 的提交）
+- [ ] 添加远端 `origin` = `git@github.com:madfuu/fingerprint-launcher.git`，`git ls-remote origin` 验证 Deploy key 可用后推送 `main`（包含 P0 的提交）
 - [ ] 轮询 Actions 结果直到三平台 `check` 与 `bundle` 全绿；修复后重推
 
 **验证**：Actions 上该提交的 run 结论为 `success`；三平台安装包产物存在。

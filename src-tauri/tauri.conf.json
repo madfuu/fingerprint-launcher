@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Fingerprint Launcher",
   "version": "0.1.0",
-  "identifier": "com.fingerprint-launcher.desktop",
+  "identifier": "io.github.madfuu.fingerprint-launcher",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
