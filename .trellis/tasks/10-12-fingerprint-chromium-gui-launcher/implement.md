@@ -134,12 +134,12 @@ npm run check
 
 ## P2 参数构建 + 版本门控 ★ 高风险
 
-- [ ] `kernel/args.rs`：`ArgSupport::for_major`、`build_launch_plan`、`validate_profile_for_kernel`，严格按 design §3.2 / §3.3 的区间与顺序
-- [ ] `shell_line` 转义（design §3.4），`HostPlatform` 显式传入
-- [ ] `extra_args` 用 `shell-words` 切分；切分失败（引号不配对）返回校验错误而非 panic；同时在 `ProfileDraft` 保存时（`profiles` 的 normalized 校验）就校验，保存即报错，而不是等到启动才失败
-- [ ] `build_launch_plan` 接收的可能是**未保存的编辑器草稿**：空白字符串字段一律视为未设置（不生成 `--x=`）；未保存的 profile 没有 id，预览时 user-data-dir 由调用方传入占位路径
-- [ ] 代理主机为 IPv6 时，`--proxy-server` 中用方括号包裹（`socks5://[::1]:1080`）；P1 的校验只接受不带方括号的裸 IPv6
-- [ ] 测试（design §3.5 全部用例）：
+- [x] `kernel/args.rs`：`ArgSupport::for_major`、`build_launch_plan`、`validate_profile_for_kernel`，严格按 design §3.2 / §3.3 的区间与顺序
+- [x] `shell_line` 转义（design §3.4），`HostPlatform` 显式传入
+- [x] `extra_args` 用自写的可移植规则切分（P2 审查改定，见 design §3.3 第 9 步）；切分失败（引号不配对）返回校验错误而非 panic；同时在 `ProfileDraft` 保存时（`profiles` 的 normalized 校验）就校验，保存即报错，而不是等到启动才失败
+- [x] `build_launch_plan` 接收的可能是**未保存的编辑器草稿**：空白字符串字段一律视为未设置（不生成 `--x=`）；未保存的 profile 没有 id，预览时 user-data-dir 由调用方传入占位路径
+- [x] 代理主机为 IPv6 时，`--proxy-server` 中用方括号包裹（`socks5://[::1]:1080`）；P1 的校验只接受不带方括号的裸 IPv6
+- [x] 测试（design §3.5 全部用例）：
   - README 两个官方示例：argv 与 `shell_line` 精确断言（argv 中无引号）
   - major ∈ {130, 131, 138, 139, 141, 142, 143, 144, 150}：参数集断言
   - seed 为 NULL 时不生成任何 `--fingerprint*` 参数
@@ -149,6 +149,10 @@ npm run check
 **验证**：同 P1。
 
 **审查关卡**：主会话逐条对照 `research/fingerprint-chromium-cli.md` §1–§3 审阅测试用例，确认没有遗漏参数、区间端点正确。这是 A3 / A4 的唯一证据来源。
+
+结果：主会话已逐条对照 research §1–§3 审阅测试用例（门控区间、生成顺序、README 两例的参数集合）。81 个测试通过。偏差：README 示例只能按参数集合比对，顺序以 design §3.3 为准；`validate_profile_for_kernel` 接收大版本号而非 `&Kernel`（无内核时用 `effective_major`）。
+
+审查后（trellis-check）：启动 URL 也禁止设置 `--user-data-dir`（Chromium 在任意位置识别开关）；cmd.exe 引号状态失衡时的 `^` 转义；zsh `=word` 加引号；Unicode 空白分词；拒绝 NUL；主会话追加：拒绝直引号外的弯引号。共 84 个测试。
 
 **提交**：`feat(kernel): launch argument builder with version gating`
 
@@ -202,6 +206,7 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 - [ ] 导入 / 导出（design §5 细则）
 - [ ] `StatusSink` 的 Tauri 实现
 - [ ] 测试：导入导出往返；`purgeProfile(dropUserData)` 不删除 `user_data_root` 之外的目录
+- [ ] `previewCommand` 在没有任何内核时：用占位程序名 `chrome` 构造临时 `Kernel`，参数集按 `effective_major(None)`（最新）；`validateProfileForKernel` 同理
 - [ ] 命令层策略（P1 审查遗留）：删除（软删除 / 永久删除）运行中的 profile 时拒绝，错误码 `profile_running`；两个 profile 指向同一个自定义 user-data-dir 时保存即报 `conflict`；`testProxy` 的 URL 同样要给 IPv6 主机加方括号
 - [ ] 设置页 / 文件对话框：Windows「复制为路径」带来的首尾引号在前端去掉再提交
 
@@ -273,6 +278,8 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 - [ ] 结构：顶部工具条 + `w-5/6 mx-auto` 主区 + 分段导航滚动 + 右侧 420px 摘要栏 + 底部悬浮操作栏（参考文档 §8）
 - [ ] 分段：基本信息（名称、备注、内核、分组、标签）/ 指纹（种子 + 随机、平台、平台版本、品牌、品牌版本、CPU 核心数、GPU 段）/ 网络与语言（代理选择、语言、接受语言、时区、WebRTC UDP）/ 浏览器行为（启动 URL、headless + 风险提示）/ 高级（额外参数、user-data-dir 覆盖）
 - [ ] 字段显隐由 `getArgSupport(kernelId)` 驱动；切换内核时展示 `validateProfileForKernel` 的警告，**不清空**失效字段的值
+- [ ] 指纹种子为空时，指纹分段的其余字段都不会生效（构建器整段跳过）：新建 profile 默认填入随机种子；种子被清空时在指纹分段顶部显示提示，并把其余指纹字段显示为未生效状态。后端不为此产生警告（P2 决定）
+- [ ] 额外参数输入框的帮助文案说明拆分规则：空格分隔、引号分组、反斜杠按字面保留、不支持 `--user-data-dir`（用专门字段）
 - [ ] 上游限制文案：代理不支持密码验证、headless 风险、GPU 伪装仅 Linux 生效（`research/fingerprint-chromium-cli.md` §4）
 - [ ] 时区下拉：`Intl.supportedValuesOf('timeZone')`，不可用时回退内置列表；语言下拉用内置常用语言列表
 - [ ] 摘要栏：指纹摘要卡片（水印图标、随机按钮）+ 命令行预览卡片（debounce 300 ms 调 `previewCommand`，等宽，复制按钮走 clipboard 插件）

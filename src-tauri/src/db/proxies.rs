@@ -45,6 +45,19 @@ pub struct Proxy {
     pub updated_at: String,
 }
 
+impl Proxy {
+    /// `<scheme>://<host>:<port>`, the `--proxy-server` value. An IPv6 host is bracketed
+    /// (`socks5://[::1]:1080`); validation only lets a colon into the host as part of a bare
+    /// IPv6 address.
+    pub fn url(&self) -> String {
+        if self.host.contains(':') {
+            format!("{}://[{}]:{}", self.scheme, self.host, self.port)
+        } else {
+            format!("{}://{}:{}", self.scheme, self.host, self.port)
+        }
+    }
+}
+
 /// Editable fields of a proxy.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -229,7 +242,9 @@ mod tests {
             assert_eq!(err.code, ErrorCode::InvalidInput, "{host}:{port}");
         }
         // A bare IPv6 address is a valid host; brackets are added when the URL is built.
-        assert_eq!(db.proxy("::1", 1080).host, "::1");
+        let v6 = db.proxy("::1", 1080);
+        assert_eq!(v6.host, "::1");
+        assert_eq!(v6.url(), "socks5://[::1]:1080");
         // Same host and port twice is allowed: entries may differ by name / note.
         db.proxy("1.2.3.4", 8080);
         db.proxy("1.2.3.4", 8080);

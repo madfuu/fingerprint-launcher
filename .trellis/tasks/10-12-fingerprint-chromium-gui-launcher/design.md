@@ -177,7 +177,7 @@ pub fn build_launch_plan(
     proxy: Option<&Proxy>,
     user_data_dir: &Path,
     host: HostPlatform,      // 显式传入，便于在 Linux 上测试 Windows 转义
-) -> LaunchPlan;
+) -> AppResult<LaunchPlan>;   // 额外参数非法或路径非 UTF-8 时 invalid_input
 ```
 
 ### 3.2 版本门控
@@ -213,14 +213,14 @@ impl ArgSupport {
 6. `--lang` / `--accept-lang` / `--timezone`
 7. `--proxy-server=<scheme>://<host>:<port>`
 8. `--headless`
-9. `extra_args`：按 shell 词法切分（`shell-words` crate），追加在后，用户有最终覆盖权
-10. 启动 URL（位置参数，最末）
+9. `extra_args`：用自写的可移植拆分规则（各 OS 一致）——空白分隔（含全角空格等 Unicode 空白）；拒绝 NUL；中文输入法的弯引号 `“ ” ‘ ’ ＂ ＇` 在直引号外直接报错并提示改用直引号；单 / 双引号分组并与相邻文本拼接；**反斜杠一律按字面保留**（Windows 路径可直接粘贴）；无注释、无展开；引号不配对 → `invalid_input`。不允许设置 `--user-data-dir`（含 `-user-data-dir`、`/user-data-dir`，大小写不敏感），否则会绕过单实例锁检测。保存与构建都执行同一校验。追加在生成参数之后，用户有最终覆盖权
+10. 启动 URL（位置参数，最末）。Chromium 会把任意位置上形似开关的参数当作开关，所以启动 URL 同样不得设置 `--user-data-dir`，保存与构建时都校验
 
 值一律 `--key=value` 形式，**不加引号**（argv 直传，不经 shell）。
 
 ### 3.4 展示用命令行
 
-`shell_line` 按 `host` 转义：
+`shell_line` 按 `host` 转义。目标 shell：Unix 为 sh / bash / zsh；Windows 为 **cmd.exe**（PowerShell 不是目标：带引号的程序路径需要 `& `，且 `$` 会展开）。cmd 中引号状态失衡时对 `& | < > ^` 加 `^` 转义；zsh 会展开以 `=` 开头的裸词，此类值也加引号；cmd 在引号内仍会展开 `%name%`，无法转义，文档注明即可：
 
 - POSIX：值只含 `[A-Za-z0-9_@%+=:,./-]` 时原样，否则单引号包裹，内部 `'` 写作 `'\''`
 - Windows：含空格或 `"` 时双引号包裹，内部 `"` 转义为 `\"`（`CommandLineToArgvW` 规则）

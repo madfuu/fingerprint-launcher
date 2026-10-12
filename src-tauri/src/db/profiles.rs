@@ -17,6 +17,7 @@ use super::{
     require_absolute, required_text, select_list,
 };
 use crate::error::{AppError, AppResult};
+use crate::kernel::args::{check_start_urls, split_extra_args};
 
 text_enum! {
     /// `--fingerprint-platform` value.
@@ -121,7 +122,8 @@ pub struct ProfileDraft {
     pub user_data_dir: Option<String>,
     /// Stored as a JSON array.
     pub start_urls: Vec<String>,
-    /// Appended verbatim after the generated arguments.
+    /// Stored verbatim; split into words by `kernel::args::split_extra_args` and appended after
+    /// the generated arguments.
     pub extra_args: Option<String>,
 }
 
@@ -197,6 +199,10 @@ impl ProfileDraft {
         if let Some(dir) = &self.user_data_dir {
             require_absolute(dir, "user data directory")?;
         }
+        if let Some(extra) = &self.extra_args {
+            // Unbalanced quotes fail here, on save, rather than on every launch.
+            split_extra_args(extra)?;
+        }
         self.tag_ids = normalize_ids(&self.tag_ids);
         self.disable_spoofing.sort_unstable();
         self.disable_spoofing.dedup();
@@ -207,6 +213,7 @@ impl ProfileDraft {
             .filter(|url| !url.is_empty())
             .map(str::to_owned)
             .collect();
+        check_start_urls(&self.start_urls)?;
         Ok(self)
     }
 }
@@ -304,7 +311,12 @@ impl FromSql for StringList {
     }
 }
 
-fn spoofing_csv(features: &[SpoofingFeature]) -> Option<String> {
+/// `font,clientrects,...`: canonical order, no duplicates, `None` when empty. The form of both
+/// the `disable_spoofing` column and the `--disable-spoofing` value.
+pub(crate) fn spoofing_csv(features: &[SpoofingFeature]) -> Option<String> {
+    let mut features = features.to_vec();
+    features.sort_unstable();
+    features.dedup();
     (!features.is_empty()).then(|| {
         features
             .iter()
@@ -880,6 +892,15 @@ mod tests {
                 user_data_dir: Some("relative/dir".into()),
                 ..TestDb::draft("p")
             },
+            ProfileDraft {
+                extra_args: Some("--window-name='unclosed".into()),
+                ..TestDb::draft("p")
+            },
+            // Chromium would read it as a switch, bypassing the single-instance check.
+            ProfileDraft {
+                start_urls: vec![" --user-data-dir=/elsewhere ".into()],
+                ..TestDb::draft("p")
+            },
         ];
         for draft in cases {
             let err = create(&db.conn, draft.clone()).unwrap_err();
@@ -926,6 +947,33 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM profiles", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn extra_args_are_validated_on_save() {
+        let db = TestDb::new();
+        let with_extra = |extra: &str| ProfileDraft {
+            extra_args: Some(extra.into()),
+            ..TestDb::draft("p")
+        };
+        // Valid quoting is stored verbatim (only trimmed), not re-joined.
+        let text = r#"--window-name="My Shop" '--x=a b' --load-extension=C:\ext"#;
+        let created = create(&db.conn, with_extra(&format!(" {text} "))).unwrap();
+        assert_eq!(created.draft.extra_args.as_deref(), Some(text));
+
+        // Open quotes, and overriding the profile's own user data directory.
+        for bad in [
+            r#"--a="b"#,
+            "--a 'b",
+            "--user-data-dir=/elsewhere",
+            r#"--no-first-run "--User-Data-Dir=C:\my dir""#,
+        ] {
+            let err = update(&db.conn, &created.id, with_extra(bad)).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{bad}");
+            let err = create(&db.conn, with_extra(bad)).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{bad}");
+        }
+        assert_eq!(get(&db.conn, &created.id).unwrap(), created);
     }
 
     #[test]
