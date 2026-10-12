@@ -28,7 +28,7 @@ use crate::error::{AppError, AppResult, ErrorCode};
 use crate::kernel::lock::{self, LockState};
 use crate::kernel::process;
 
-pub use source::{DbLaunchSource, LaunchRequest, LaunchSource, user_data_dir};
+pub use source::{DbLaunchSource, LaunchRequest, LaunchSource, user_data_dir, user_data_root};
 pub use stderr::STDERR_TAIL_LINES;
 
 /// Time limits of the browser lifecycle. Tests shorten them.
@@ -64,6 +64,7 @@ impl Default for LauncherConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ProfileStatus {
     Stopped,
@@ -76,6 +77,7 @@ pub enum ProfileStatus {
 
 /// A known cause of a failed start, for an actionable message. The frontend picks the text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum FailureHint {
     /// `No usable sandbox`: add `--no-sandbox` to the profile's extra arguments.
@@ -86,6 +88,7 @@ pub enum FailureHint {
 
 /// Why a launch failed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchFailure {
     /// An [`ErrorCode`]: the pre-spawn codes, or `startup_failed` when the browser exited
@@ -113,6 +116,7 @@ impl From<&AppError> for LaunchFailure {
 
 /// `profile://status-changed`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct StatusEvent {
     pub profile_id: String,
@@ -125,6 +129,7 @@ pub struct StatusEvent {
 
 /// `batch://progress`, emitted after each profile of a batch launch.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct BatchProgress {
     pub total: usize,
@@ -147,6 +152,7 @@ pub trait StatusSink: Send + Sync + 'static {
 
 /// A profile started by this launcher (`listRunning`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct RunningInfo {
     pub profile_id: String,
@@ -521,7 +527,7 @@ impl Inner {
 
 /// The kernel must be an existing file; on Unix also executable (a missing `x` bit is the
 /// usual state of a freshly extracted download).
-fn check_executable(program: &Path) -> AppResult<()> {
+pub(crate) fn check_executable(program: &Path) -> AppResult<()> {
     let not_executable = |why: String| {
         AppError::new(
             ErrorCode::KernelNotExecutable,

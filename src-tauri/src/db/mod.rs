@@ -108,6 +108,7 @@ impl Drop for NestedSavepoint<'_> {
 
 /// One page of a paginated list.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Page<T> {
     pub items: Vec<T>,

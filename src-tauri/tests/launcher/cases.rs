@@ -527,3 +527,70 @@ pub fn probe_reads_the_version_flag() {
         }
     });
 }
+
+/// Deleting or purging a profile that runs is refused (`profile_running`); once it has stopped
+/// both work, and purging removes its data directory (command layer, design §5).
+pub fn running_profiles_cannot_be_deleted() {
+    use std::sync::Arc;
+
+    use fingerprint_launcher_lib::db::kernels::{self, KernelInput};
+    use fingerprint_launcher_lib::paths::AppPaths;
+    use fingerprint_launcher_lib::services::profiles as service;
+    use fingerprint_launcher_lib::services::profiles::DataDirOutcome;
+    use fingerprint_launcher_lib::state::AppState;
+
+    use crate::support::RecordingSink;
+
+    block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::new(dir.path().join("data"));
+        let sink = Arc::new(RecordingSink::default());
+        let state =
+            AppState::with_config(paths.clone(), sink.clone(), config(300, 300, 1000)).unwrap();
+        let exe = std::env::current_exe().unwrap();
+        state
+            .db(move |conn| {
+                kernels::create(
+                    conn,
+                    KernelInput {
+                        name: "fake".into(),
+                        exec_path: exe.to_str().unwrap().into(),
+                        major_version: 150,
+                        full_version: None,
+                    },
+                )
+            })
+            .await
+            .unwrap();
+        let profile = service::create(
+            &state,
+            ProfileDraft {
+                name: "p".into(),
+                ..ProfileDraft::default()
+            },
+        )
+        .await
+        .unwrap();
+        let id = profile.id;
+        let udd = paths.default_user_data_root().join(&id);
+        // No child process: one that is still exiting could hold a file while the directory is
+        // deleted (Windows).
+        std::fs::create_dir_all(&udd).unwrap();
+        std::fs::write(udd.join(crate::fake::CONFIG_FILE), "no-child").unwrap();
+
+        state.launcher.launch(&id).await.unwrap();
+        wait_file(&udd.join("ready")).await;
+        let err = service::soft_delete(&state, id.clone()).await.unwrap_err();
+        assert_eq!(err.code, ErrorCode::ProfileRunning);
+        let err = service::purge(&state, id.clone(), true).await.unwrap_err();
+        assert_eq!(err.code, ErrorCode::ProfileRunning);
+        assert!(udd.exists());
+
+        state.launcher.stop(&id).await;
+        assert_eq!(sink.statuses(&id).last(), Some(&Stopped));
+        service::soft_delete(&state, id.clone()).await.unwrap();
+        let result = service::purge(&state, id, true).await.unwrap();
+        assert_eq!(result.data_dir, DataDirOutcome::Removed);
+        assert!(!udd.exists());
+    });
+}

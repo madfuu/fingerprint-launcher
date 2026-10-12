@@ -9,6 +9,7 @@ use serde::Serialize;
 /// Stable error codes. The frontend keys its i18n messages on them, so renaming one is a
 /// breaking change to the bridge contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     /// The requested record does not exist.
@@ -37,6 +38,10 @@ pub enum ErrorCode {
     StartupFailed,
     /// The launcher is stopping every browser because the app is quitting.
     ShuttingDown,
+    /// The kernel's version could not be detected; the user has to enter the major version.
+    KernelVersionUnknown,
+    /// The proxy could not reach either IP lookup service.
+    ProxyTestFailed,
 }
 
 impl ErrorCode {
@@ -56,6 +61,8 @@ impl ErrorCode {
             Self::SpawnFailed => "spawn_failed",
             Self::StartupFailed => "startup_failed",
             Self::ShuttingDown => "shutting_down",
+            Self::KernelVersionUnknown => "kernel_version_unknown",
+            Self::ProxyTestFailed => "proxy_test_failed",
         }
     }
 }
@@ -66,7 +73,9 @@ impl fmt::Display for ErrorCode {
     }
 }
 
+/// Every failed command rejects with this (design §5).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, thiserror::Error)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[error("{code}: {message}")]
 pub struct AppError {
     pub code: ErrorCode,
@@ -156,6 +165,8 @@ mod tests {
             ErrorCode::SpawnFailed,
             ErrorCode::StartupFailed,
             ErrorCode::ShuttingDown,
+            ErrorCode::KernelVersionUnknown,
+            ErrorCode::ProxyTestFailed,
         ] {
             assert_eq!(serde_json::to_value(code).unwrap(), code.as_str());
         }

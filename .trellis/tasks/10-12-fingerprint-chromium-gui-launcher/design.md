@@ -309,12 +309,16 @@ Simprint 的 Unix 侧是 no-op（`job.rs`），本项目不照搬——否则 A6
 
 ### 4.5 应用退出（R3.5 / A7）
 
-两条退出路径都拦：
+P4 落定（`src-tauri/src/shell.rs`，依据 tauri 2.12.3 / tao 0.37.1 源码）：
 
-1. **主窗口关闭**（自绘标题栏的关闭按钮 → `getCurrentWindow().close()`）：`WindowEvent::CloseRequested` 中若 `running` 非空 → `api.prevent_close()` → emit `app://close-requested`
-2. **应用级退出**（macOS Cmd+Q 等）：`RunEvent::ExitRequested` → `api.prevent_exit()` → 同上
+1. **主窗口关闭**（自绘标题栏的关闭按钮 → `getCurrentWindow().close()`、Alt+F4、窗口管理器）：`WindowEvent::CloseRequested` 中若运行表（含启动中）非空 → `api.prevent_close()` → emit `app://close-requested { runningCount }`。这是**唯一**的确认点。前端尚未调用过 `showMainWindow`（前端坏了、无人应答）时不弹框，直接按「已确认」走 `quitApp` 流程，避免窗口永远关不掉
+2. **`RunEvent::ExitRequested`（无退出码）不拦截**：它只在最后一个窗口已销毁之后才触发，此时已无处弹框；拦截只会留下一个无窗口的进程。这样一次关闭最多一个确认框
+3. **macOS Cmd+Q / Dock「退出」**：tao 0.37 直接 `terminate:`，既无 `CloseRequested` 也无 `ExitRequested`，只有 `RunEvent::Exit`，无法拦截确认
+4. **兜底**：所有路径最终都经过 `RunEvent::Exit`，在其中同步执行 `launcher.shutdown()`（温和关闭 → 宽限 → 整树强杀，上限约为 `STOP_GRACE`），保证 A7。Windows 上 Job Object 的 kill-on-close 另行兜底
 
-前端收到事件后弹确认框，确认则调 `quitApp()`：置 `exiting` → 并发停止全部（§4.3）→ `app.exit(0)`。`exiting` 为真时再次触发关闭直接忽略，防重入。`running` 为空时不拦截，直接退出。
+前端确认后调 `quitApp()`：置 `exiting` → `launcher.shutdown()`（并发停止全部，§4.3，拒绝新启动）→ `app.exit(0)`（`ExitRequested` 带退出码，放行）。`exiting` 为真时再次关闭窗口被静默阻止、再次调用 `quitApp` 立即返回，防重入。运行表为空时不拦截，直接退出。
+
+确认框打开期间用户再次点关闭（对话框遮罩不盖标题栏，关闭按钮仍可点），Rust 会再发一次 `app://close-requested`：前端只更新已打开确认框中的数量，不叠加第二个确认框（Rust 侧不知道确认框何时被取消，去重放在前端）。
 
 ### 4.6 批量启动（R4.2 / A8）
 
@@ -325,50 +329,63 @@ Simprint 的 Unix 侧是 no-op（`job.rs`），本项目不照搬——否则 A6
 
 ## 5. 命令契约
 
-`bridge.ts` 与 Rust `commands/` 一一对应。错误统一为 `{ code: string; message: string }`，`code` 供前端选 i18n 文案，`message` 为原始细节。
+`bridge.ts` 与 Rust `commands/` 一一对应。错误统一为 `{ code: string; message: string }`（TS 类型 `AppError`），`code` 供前端选 i18n 文案，`message` 为原始细节。例外：参数反序列化失败（`InvalidArgs`）与 ACL 拒绝由 Tauri 自身以**纯字符串**拒绝（tauri 2.12 `ipc/mod.rs` `From<crate::Error> for InvokeError`），`bridge.ts` 须把非 `AppError` 的拒绝统一包装成 `AppError`（如 `invalid_input` + 原文），调用方只处理一种形状。
+
+**类型来源（P4 落定）**：下列签名中的所有 DTO、枚举、事件载荷与 `AppError` 都由 Rust 定义经 ts-rs 生成到 `src/lib/bindings/`（`src-tauri/src/bindings.rs`，`cargo test` 时导出；`index.ts` 汇总再导出，`events.ts` 含事件名常量 `EVENTS` 与 `EventPayloads` 映射）。`bridge.ts` 只引用生成的类型，不手写 DTO；CI 校验生成结果与提交一致。命令参数名为 camelCase（Tauri 默认）。
 
 ```ts
 // profiles
-listProfiles(q: ProfileQuery): Promise<Page<ProfileRow>>
+listProfiles(query: ProfileQuery): Promise<Page<ProfileRow>>
 getProfile(id): Promise<Profile>
 createProfile(draft: ProfileDraft): Promise<Profile>
-updateProfile(id, draft): Promise<Profile>
-deleteProfile(id) / restoreProfile(id): Promise<void>      // 软删除 / 恢复
-purgeProfile(id, dropUserData: boolean): Promise<void>
-duplicateProfile(id): Promise<Profile>   // 新 id、新种子、默认目录、名称加「副本」
-exportProfiles(ids, path): Promise<number>      // 写入用户在保存对话框中选的路径，返回条数
-importProfiles(path): Promise<ImportResult>
+updateProfile(id, draft: ProfileDraft): Promise<Profile>
+deleteProfile(id) / restoreProfile(id): Promise<void>      // 软删除 / 恢复；运行中删除 → profile_running
+purgeProfile(id, dropUserData: boolean): Promise<PurgeResult>   // 运行中 → profile_running
+duplicateProfile(id): Promise<Profile>   // 新 id、新种子（原无种子则仍无）、默认目录、名称加「副本」/「(copy)」（按界面语言）
+exportProfiles(ids, path): Promise<number>      // 写入用户在保存对话框中选的路径（原子替换），返回条数
+importProfiles(path): Promise<ImportResult>     // 全部成功或全部回滚
 
 // 启动
-previewCommand(draft, kernelId?): Promise<LaunchPlan>
-getArgSupport(kernelId?): Promise<ArgSupport>
-validateProfileForKernel(draft, kernelId?): Promise<FieldWarning[]>
-launchProfile(id) / stopProfile(id): Promise<void>
+previewCommand(draft: ProfileDraft, profileId: string | null): Promise<LaunchPlan>
+getArgSupport(kernelId: string | null): Promise<ArgSupport>       // null = 默认内核
+validateProfileForKernel(draft: ProfileDraft): Promise<FieldWarning[]>
+launchProfile(id): Promise<void>         // 进程已存在（Starting）即返回，后续状态走事件
+stopProfile(id): Promise<void>           // 停止完成才返回（≤ 宽限期 + 强杀）
 listRunning(): Promise<RunningInfo[]>
-batchLaunch(ids) / batchStop(ids): Promise<void>
+batchLaunch(ids): Promise<BatchProgress> // 并发与间隔取设置；整批结束返回最终计数，过程走 batch://progress
+batchStop(ids): Promise<void>
 quitApp(): Promise<void>
 
 // 内核
-listKernels() / addKernel(path, name?, majorVersion?) / updateKernel / removeKernel(id) / setDefaultKernel(id)
+listKernels(): Promise<Kernel[]>
+addKernel(path, name: string | null, majorVersion: number | null): Promise<Kernel>
+updateKernel(id, input: KernelInput): Promise<Kernel>
+removeKernel(id) / setDefaultKernel(id): Promise<void>
 detectKernels(): Promise<KernelCandidate[]>
-probeKernel(path): Promise<{ majorVersion: number | null; fullVersion: string | null; method: 'pe_version' | 'info_plist' | 'file_name' | 'version_flag' | null }>
+probeKernel(path): Promise<KernelProbe>   // { majorVersion, fullVersion, method: 'pe_version'|'info_plist'|'file_name'|'version_flag' }，找不到时全为 null；path 须为绝对路径（裸名会经 PATH 查找并被执行），否则 invalid_input
 
-// 代理 / 分组 / 标签 / 设置
-listProxies() / createProxy / updateProxy / deleteProxy / testProxy(id)
-listGroups()  / createGroup / updateGroup / deleteGroup
-listTags()    / createTag   / updateTag   / deleteTag / setProfileTags(profileId, tagIds)
-batchSetGroup(ids, groupId | null) / batchAddTags(ids, tagIds)
-getSettings() / updateSettings(patch)
+// 代理 / 分组 / 标签 / 设置 / 应用
+listProxies(): Promise<Proxy[]> / createProxy(input: ProxyInput) / updateProxy(id, input) / deleteProxy(id)
+testProxy(id): Promise<ProxyCheck>
+listGroups(): Promise<Group[]>  / createGroup(input: GroupInput) / updateGroup(id, input) / deleteGroup(id)
+listTags(): Promise<Tag[]>      / createTag(input: TagInput)     / updateTag(id, input)   / deleteTag(id)
+setProfileTags(profileId, tagIds): Promise<void>
+batchSetGroup(ids, groupId: string | null) / batchAddTags(ids, tagIds): Promise<void>
+getSettings(): Promise<Settings> / updateSettings(patch: SettingsPatch): Promise<Settings>
+getAppInfo(): Promise<AppInfo>           // { version, os: 'windows'|'macos'|'linux', dataDir, defaultUserDataRoot, logDir }
 showMainWindow(): Promise<void>          // 前端就绪后显示窗口
 ```
 
-事件（Rust → 前端）：
+P4 相对原契约的改动：`previewCommand` 第二参数由 `kernelId` 改为 `profileId`（内核一律取 `draft.kernelId`，为 null 用默认内核；`profileId` 用于算出已存在 profile 的真实默认目录）；`validateProfileForKernel` 去掉 `kernelId`（同上取 `draft.kernelId`）；`purgeProfile` 返回 `PurgeResult`；`batchLaunch` 返回最终 `BatchProgress`；新增 `getAppInfo`（macOS 标题栏判断、设置页显示默认数据根目录）。
+
+事件（Rust → 前端；名称见生成的 `EVENTS`）：
 
 ```ts
-'profile://status-changed'  { profileId, status, pid?, error? }   // status: stopped|starting|running|stopping|error
+'profile://status-changed'  StatusEvent    { profileId, status, pid: number | null, error: LaunchFailure | null }
+                            // status: stopped|starting|running|stopping|error
                             // error: { code, message, hint: 'no_sandbox'|'missing_fuse'|null, exitCode, stderrTail }
-'batch://progress'          { total, launched, failed, skipped }  // skipped：已在运行，或因退出而未尝试
-'app://close-requested'     { runningCount }
+'batch://progress'          BatchProgress  { total, launched, failed, skipped }  // skipped：已在运行，或因退出而未尝试
+'app://close-requested'     CloseRequested { runningCount }
 ```
 
 细则：
@@ -379,9 +396,13 @@ showMainWindow(): Promise<void>          // 前端就绪后显示窗口
 - 错误码（P3 新增）：`no_kernel`（profile 无内核且无默认内核）、`kernel_missing`（可执行文件不存在）、`kernel_not_executable`（不是文件 / Unix 缺执行位）、`profile_running`（已在本启动器中运行或启动中）、`profile_running_externally`（user-data-dir 被启动器外的浏览器持有）、`spawn_failed`（操作系统拒绝启动）、`startup_failed`（启动期内退出，仅出现在状态事件的 `error` 中）、`shutting_down`（退出流程中拒绝新启动）。两个运行中 profile 共用同一 user-data-dir 时启动返回 `conflict`。启动前失败（`profile_running`、`shutting_down` 除外）同时发出 `error` 状态事件。
 - `ProfileDraft` 含 `tagIds`，编辑器一次保存即可写入标签；`setProfileTags` 保留给列表页。
 - `probeKernel` 按文件类型（而非宿主平台）选择方法（research §7；P3 落定，全部为可移植代码，三平台都能测）：PE 文件读版本资源（`chrome.exe --version` 在 Windows 上不输出，PE 从不执行）；`.app` 包或其 `Contents/MacOS/*` 读 `Info.plist`；`*.AppImage` 先解析文件名，再试 `--version`；其他执行 `--version`（10 s 超时）。全部失败返回 `null`，UI 要求用户手填大版本号，**不猜**。
-- `purgeProfile(dropUserData=true)` **只删除位于 `user_data_root` 之下的目录**；用户自定义到其他位置的目录永不由程序删除，只提示路径。
-- `testProxy`：经该代理请求 `https://ipinfo.io/json`（失败回退 `http://ip-api.com/json`），10 s 超时，回显出口 IP / 国家 / 城市 / 时区。仅用户点击时触发。
-- 导出 JSON 带 `formatVersion`，不含 id 与 user-data-dir（机器相关）；分组、标签以名称导出，代理以 `scheme/host/port` 导出。导入时按名称复用或新建分组/标签，按 `scheme/host/port` 复用或新建代理，profile 一律新建。
+- 错误码（P4 新增）：`kernel_version_unknown`（`addKernel` 探测不到版本且未手填大版本号，UI 据此要求手填）、`proxy_test_failed`（两个查询服务都失败，`message` 含两者原因）。
+- **user-data-dir 归属（P4 落定）**：保存（新建 / 更新 / 复制 / 导入）时，该 profile 的实际目录（自定义目录，或 `<root>/<id>`）不得与其他任何 profile（含回收站中的）的实际目录相同、互为包含；否则 `conflict`。比较前做词法规范化（`.`、`..`、末尾分隔符），Windows 与 macOS 上忽略大小写（NTFS / APFS 默认不区分）。自定义目录也不能是数据根目录本身或其上级（它会包含现在与将来的全部默认目录），即使暂时没有使用默认目录的 profile 也拒绝，同为 `conflict`。修改设置中的数据根目录时不做这项检查（判断留给 P9 的设置页）。
+- `purgeProfile(dropUserData=true)` **只删除严格位于 `user_data_root` 之下的目录**：比较的是 `canonicalize` 后的真实路径（`..`、中间的符号链接、macOS `/var`→`/private/var` 都不能绕过），目录本身是符号链接、等于根目录、或与其他 profile 的目录重叠时一律保留。用户自定义到其他位置的目录永不由程序删除。`PurgeResult = { userDataDir, dataDir: 'removed'|'not_requested'|'missing'|'outside_root'|'shared' }`，UI 据此提示保留的路径。先删目录（失败则返回 `io`、记录保留以便重试），再删记录；同时删除该 profile 的 stderr 日志。
+- `testProxy`：经该代理请求 `https://ipinfo.io/json`（失败回退 `http://ip-api.com/json`），每次请求 10 s 超时（含读响应体），响应体最多 64 KiB、不跟随重定向（回退服务是经用户代理的明文 HTTP），回显出口 IP / 国家代码（ISO 3166-1）/ 城市 / 时区 / 耗时 / 所用服务。SOCKS5 用 `socks5h`（经代理解析域名，与 Chromium 的 `--proxy-server=socks5://` 一致）；IPv6 主机加方括号。HTTP 客户端为 reqwest（`rustls-no-provider` + ring，不依赖 OpenSSL / aws-lc）。仅用户点击时触发。
+- `detectKernels`：research §8 的候选位置，只列出、不自动添加；每个候选并行探测（最多 4 个同时，`--version` 3 s 超时），`registered` 标出已登记的路径。Linux 的 AppImage 候选要求文件名含 `chromium`（探测会执行它，不能误启动无关的 AppImage）。
+- `addKernel`：选中 `.app` 时解析为其中的可执行文件；检查存在且可执行；探测版本（手填的大版本号优先，探测到的完整版本号仅在大版本一致时保留）；名称缺省为 `Chromium <版本>`。`updateKernel` 只在路径变化时重新检查路径。
+- 导出 JSON：`{ formatVersion: 1, exportedAt, profiles: [...] }`；每个 profile 含 `ProfileDraft` 中除 `groupId / kernelId / proxyId / tagIds / userDataDir` 外的全部字段，外加 `group: { name, color }`、`tags: [{ name, color }]`、`proxy: { scheme, host, port, name, note }`。不含 id、user-data-dir 与内核绑定（机器相关；导入后用默认内核）。导入时按名称（ASCII 大小写不敏感）复用或新建分组/标签，按 `scheme/host/port` 复用或新建代理，profile 一律新建；更高的 `formatVersion` 明确拒绝；文件上限 32 MiB、最多 10 000 条 profile（解析时逐条计数即拒绝，不先构建整棵 JSON 树——`{}` 这样的最短条目解析后会膨胀百倍以上）；整个导入在一个事务内，任一条失败（错误信息带序号与名称）则全部回滚。
 
 ## 6. 前端结构
 
@@ -409,6 +430,7 @@ src/
   lib/
     bridge.ts                    # ★ 唯一 invoke 收口
     bridge.mock.ts               # 内存 mock，仅 dev 构建加载
+    bindings/                    # Rust 生成的 DTO / 事件类型（ts-rs，§5），勿手改
     utils.ts                     # cn()
   i18n/
     index.ts  registry.ts
@@ -428,7 +450,8 @@ src/
 - 状态：服务端数据用 `use*` hooks + 手动 `refresh()`；UI 状态用 zustand；运行态单独一个 zustand store，启动时 `listRunning()` 再订阅 `profile://status-changed` 增量更新
 - 通知：sonner
 - **bridge 运行模式**：检测 `window.__TAURI_INTERNALS__`；不存在且 `import.meta.env.DEV` 时加载 `bridge.mock.ts`（带种子数据，模拟启动/停止状态流转）。生产构建中 mock 被摇树移除。
-- **启动不闪烁**：窗口以 `visible(false)` 创建，前端读完设置、初始化 i18n 与主题后调 `showMainWindow()`。主题与语言存 `settings` 表，单一来源。
+- **启动不闪烁**：窗口以 `visible(false)` 创建，前端读完设置、初始化 i18n 与主题后调 `showMainWindow()`。主题与语言存 `settings` 表，单一来源。兜底（P4）：窗口创建 5 s 后前端仍未调用，则 Rust 侧自行显示窗口，前端出错时也不会留下不可见的进程。环境变量 `FPL_SMOKE_EXIT_ON_READY=1` 时，`showMainWindow` 被调用即 `app.exit(0)`，供 CI 冒烟验证「WebView 加载前端 + 正式 CSP 下完成一次 IPC」。
+- **DTO 类型**：只从 `src/lib/bindings`（Rust 生成，见 §5）导入，不手写。
 
 ## 7. 外观复刻（R8）
 
@@ -452,6 +475,11 @@ src/
 
 窗口：`inner_size(1438, 828)`、`min_inner_size(1038, 688)`、居中、`visible(false)`、`disable_drag_drop_handler()`（Tauri 2.12 中 `drag_and_drop(false)` 仅 Windows 可用，跨平台用前者）；对话框遮罩从 `top: 48px` 起，不盖住标题栏。
 
+安全（P4 落定）：
+
+- 能力（`capabilities/default.json`，仅 `main` 窗口）只开用到的：`core:window:allow-minimize` / `allow-toggle-maximize` / `allow-close` / `allow-start-dragging` / `allow-internal-toggle-maximize`（`data-tauri-drag-region` 双击最大化走这个内部命令）/ `allow-show`，`core:event:allow-listen` / `allow-unlisten`，`dialog:allow-open` / `allow-save`，`clipboard-manager:allow-write-text`。应用自身的命令在未定义 app ACL manifest 时对本地来源默认放行（tauri 2.12 `webview/mod.rs`）
+- CSP：`default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'none'`。IPC 在 Linux / macOS 走 `ipc://localhost`，Windows 走 `http://ipc.localhost`。`dangerousDisableAssetCspModification: ["style-src"]`：否则 Tauri 会给 `style-src` 注入 nonce / hash，使 `'unsafe-inline'` 失效，Radix / sonner 运行时插入的 `<style>` 被拦。`script-src` 仍由 Tauri 管理。桌面端 dev 模式直接加载 devUrl，CSP 不生效，故未设 `devCsp`
+
 ## 8. 构建与工具链
 
 - Tauri 2（脚手架时取最新 2.x，锁定于 `Cargo.lock` / `package-lock.json`）
@@ -465,6 +493,8 @@ src/
 - 检查：`npm run lint`（含 `eslint-plugin-i18next` 的 `no-literal-string`，`jsx-only` 模式，属性白名单排除 `className` / `variant` / `size` / `data-*` 等非文案属性，让 A10「无硬编码文案」可机检）、`npm run typecheck`、`cargo fmt --check`、`cargo clippy -D warnings`、`cargo test`、`vitest run`
 - CI：GitHub Actions（公开仓库 `madfuu/fingerprint-launcher`），矩阵 `ubuntu-22.04` / `windows-latest` / `macos-latest`，原生跑 clippy + test，再 `tauri build` 打包并上传产物；Linux 额外做 xvfb 冒烟。**CI 是权威结果**；本机只跑开发循环（typecheck / lint / vitest / Linux 上的 cargo 检查与测试），不做打包、冒烟和 Windows 交叉检查（用户决定）
 - `tauri::generate_context!()` 编译期要求 `frontendDist` 存在：任何 `cargo clippy` / `cargo test` 之前先 `npm run build`
+- 桥接类型（P4）：ts-rs 12（仅 dev-dependency；类型以 `#[cfg_attr(test, derive(ts_rs::TS))]` 派生，发布构建不含）。`cargo test` 写出 `src/lib/bindings/`（只改内容有变的文件、删除过期文件），整数统一映射为 `number`；该目录不经 Prettier（`.prettierignore`），但参与 `tsc` 与 ESLint。CI 的 ubuntu `check` 在 `cargo test` 之后检查该目录无改动（含新增文件）
+- Rust 侧其他 P4 依赖：`tauri-plugin-dialog`、`tauri-plugin-clipboard-manager`；`reqwest` 0.13（`default-features = false`，`rustls-no-provider` + `socks`）+ `rustls`（`ring`）
 
 ## 9. 许可
 

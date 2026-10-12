@@ -39,6 +39,7 @@ pub const BATCH_CONCURRENCY_RANGE: RangeInclusive<u32> = 1..=32;
 pub const BATCH_INTERVAL_MS_RANGE: RangeInclusive<u32> = 0..=60_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     /// Root of the default per-profile user-data-dirs. `None` = the app default
@@ -69,6 +70,7 @@ impl Default for Settings {
 
 /// A partial update: absent fields stay unchanged.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields))]
 #[serde(rename_all = "camelCase", default)]
 pub struct SettingsPatch {
     /// Absent = unchanged, `null` (or blank) = back to the app default, string = custom root.

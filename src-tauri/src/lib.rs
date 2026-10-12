@@ -1,52 +1,90 @@
 //! Fingerprint Launcher — Tauri application entry point.
 
+pub mod commands;
 pub mod db;
 pub mod error;
+pub mod events;
 pub mod kernel;
+pub mod paths;
 pub mod services;
+pub mod shell;
+pub mod state;
 
-use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
+#[cfg(test)]
+mod bindings;
 
-/// Label of the single application window. Referenced by `capabilities/default.json`.
-pub const MAIN_WINDOW_LABEL: &str = "main";
+use std::sync::Arc;
+
+use tauri::Manager;
+
+use crate::events::TauriSink;
+use crate::paths::AppPaths;
+use crate::shell::ShellState;
+use crate::state::AppState;
 
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .manage(ShellState::from_env())
         .setup(|app| {
-            create_main_window(app.handle())?;
+            let data_dir = app.path().app_data_dir()?;
+            let sink = Arc::new(TauriSink::new(app.handle().clone()));
+            let state = AppState::open(AppPaths::new(data_dir), sink)?;
+            app.manage(state);
+            shell::create_main_window(app.handle())?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-
-/// Creates the main window in code (`app.windows` in `tauri.conf.json` is empty) so the
-/// title bar can differ per platform. Dimensions follow design §7.
-fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
-    let builder =
-        WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
-            .title(&app.package_info().name)
-            .inner_size(1438.0, 828.0)
-            .min_inner_size(1038.0, 688.0)
-            .resizable(true)
-            .maximizable(true)
-            .center()
-            // Native file drops are not used; this keeps HTML5 drag and drop working in the
-            // WebView on every platform (`drag_and_drop(false)` exists on Windows only).
-            .disable_drag_drop_handler()
-            // Shown immediately for now. P5 switches to `visible(false)` and lets the frontend
-            // call `showMainWindow` once settings, i18n and theme are loaded (no white flash).
-            .visible(true);
-
-    // macOS keeps the native traffic lights over a transparent title bar; elsewhere the
-    // frontend draws its own title bar and window controls.
-    #[cfg(target_os = "macos")]
-    let builder = builder
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true);
-    #[cfg(not(target_os = "macos"))]
-    let builder = builder.decorations(false);
-
-    builder.build()?;
-    Ok(())
+        .on_window_event(shell::on_window_event)
+        .invoke_handler(tauri::generate_handler![
+            commands::profiles::list_profiles,
+            commands::profiles::get_profile,
+            commands::profiles::create_profile,
+            commands::profiles::update_profile,
+            commands::profiles::delete_profile,
+            commands::profiles::restore_profile,
+            commands::profiles::purge_profile,
+            commands::profiles::duplicate_profile,
+            commands::profiles::export_profiles,
+            commands::profiles::import_profiles,
+            commands::profiles::set_profile_tags,
+            commands::profiles::batch_set_group,
+            commands::profiles::batch_add_tags,
+            commands::launch::preview_command,
+            commands::launch::get_arg_support,
+            commands::launch::validate_profile_for_kernel,
+            commands::launch::launch_profile,
+            commands::launch::stop_profile,
+            commands::launch::list_running,
+            commands::launch::batch_launch,
+            commands::launch::batch_stop,
+            commands::kernels::list_kernels,
+            commands::kernels::add_kernel,
+            commands::kernels::update_kernel,
+            commands::kernels::remove_kernel,
+            commands::kernels::set_default_kernel,
+            commands::kernels::detect_kernels,
+            commands::kernels::probe_kernel,
+            commands::library::list_proxies,
+            commands::library::create_proxy,
+            commands::library::update_proxy,
+            commands::library::delete_proxy,
+            commands::library::test_proxy,
+            commands::library::list_groups,
+            commands::library::create_group,
+            commands::library::update_group,
+            commands::library::delete_group,
+            commands::library::list_tags,
+            commands::library::create_tag,
+            commands::library::update_tag,
+            commands::library::delete_tag,
+            commands::app::get_settings,
+            commands::app::update_settings,
+            commands::app::get_app_info,
+            commands::app::show_main_window,
+            commands::app::quit_app,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    app.run(shell::on_run_event);
 }

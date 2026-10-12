@@ -33,6 +33,7 @@ pub(crate) const COLUMNS: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Proxy {
     pub id: String,
@@ -60,6 +61,7 @@ impl Proxy {
 
 /// Editable fields of a proxy.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ProxyInput {
     #[serde(default)]
@@ -130,6 +132,26 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Proxy> {
     conn.query_row(&select("WHERE x.id = ?1"), [id], |row| from_row(row, ""))
         .optional()?
         .ok_or_else(|| not_found("proxy", id))
+}
+
+/// The oldest proxy with this endpoint (host compared ASCII case-insensitively, as host names
+/// are). Duplicates are allowed, so there may be more than one.
+pub fn find_by_endpoint(
+    conn: &Connection,
+    scheme: ProxyScheme,
+    host: &str,
+    port: u16,
+) -> AppResult<Option<Proxy>> {
+    Ok(conn
+        .query_row(
+            &select(
+                "WHERE x.scheme = ?1 AND x.host = ?2 COLLATE NOCASE AND x.port = ?3
+                 ORDER BY x.created_at, x.rowid LIMIT 1",
+            ),
+            params![scheme, host.trim(), port],
+            |row| from_row(row, ""),
+        )
+        .optional()?)
 }
 
 pub fn create(conn: &Connection, input: ProxyInput) -> AppResult<Proxy> {
@@ -263,6 +285,23 @@ mod tests {
             }))
             .is_err()
         );
+    }
+
+    #[test]
+    fn find_by_endpoint_matches_scheme_host_and_port() {
+        let db = TestDb::new();
+        let socks = db.proxy("Proxy.Example.com", 1080);
+        let find = |scheme, host: &str, port| {
+            find_by_endpoint(&db.conn, scheme, host, port)
+                .unwrap()
+                .map(|p| p.id)
+        };
+        assert_eq!(
+            find(ProxyScheme::Socks5, " proxy.example.com ", 1080),
+            Some(socks.id)
+        );
+        assert_eq!(find(ProxyScheme::Http, "proxy.example.com", 1080), None);
+        assert_eq!(find(ProxyScheme::Socks5, "proxy.example.com", 1081), None);
     }
 
     #[test]

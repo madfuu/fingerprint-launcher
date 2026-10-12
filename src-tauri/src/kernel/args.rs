@@ -18,6 +18,7 @@ use crate::error::{AppError, AppResult};
 
 /// Inclusive range of kernel major versions that accept an argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct MajorRange {
     pub min: u32,
@@ -68,6 +69,7 @@ const DISABLE_SPOOFING: MajorRange = MajorRange::since(144);
 /// editor shows exactly the fields the builder will emit; the frontend never compares version
 /// numbers itself (design §3.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ArgSupport {
     /// `--fingerprint-brand`, `--fingerprint-brand-version` (131+).
@@ -99,6 +101,7 @@ pub fn effective_major(kernel: Option<&Kernel>) -> u32 {
 
 /// What to spawn, plus its display form. Returned to the editor by `previewCommand`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchPlan {
     pub program: PathBuf,
@@ -320,6 +323,7 @@ fn sets_user_data_dir(word: &str) -> bool {
 /// A draft field whose argument only some kernel versions accept. Serialized as the field's
 /// name in the bridge `ProfileDraft` (`fpGpuVendor`, ...).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum GatedField {
     FpBrand,
@@ -332,6 +336,7 @@ pub enum GatedField {
 
 /// Machine-readable cause of a [`FieldWarning`]; the frontend picks the i18n text by it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum WarningReason {
     /// The kernel predates the argument.
@@ -343,6 +348,7 @@ pub enum WarningReason {
 /// A field that is set but will not be passed to the kernel, because the kernel's version
 /// does not accept its argument. The value itself is kept (R2.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct FieldWarning {
     pub field: GatedField,

@@ -89,6 +89,19 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+      # `cargo test` regenerates the TypeScript bindings of the bridge types
+      # (src-tauri/src/bindings.rs); the committed copy must match the Rust types.
+      - name: TypeScript bindings are up to date
+        if: runner.os == 'Linux'
+        run: |
+          changes=$(git status --porcelain -- src/lib/bindings)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            git --no-pager diff -- src/lib/bindings
+            echo "::error::src/lib/bindings is out of date: run cargo test in src-tauri and commit the result"
+            exit 1
+          fi
+
   bundle:
     name: bundle (${{ matrix.os }})
     needs: check

@@ -201,31 +201,52 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 - `StatusSink` 为两个方法（状态 / 批量进度）；`batch://progress` 增加 `skipped`。
 - 每次主进程退出后都对整棵进程树补杀一次（Unix `killpg`，Windows `TerminateJobObject`），回收外部 kill 主进程或崩溃后遗留的子进程。
 
+里程碑推送（2026-10-13）：P1–P3 合并为一次推送 `c464c86`，run 38307455004 一次通过——ubuntu / windows / macos 的 `check`（原生 clippy + 全部测试，含 Windows Job Object 与 macOS 进程组用例）均 success，`bundle` 按规则跳过。
+
 **提交**：`feat(launcher): process lifecycle, singleton lock, version probe`
 
 ---
 
 ## P4 命令层、窗口与退出
 
-- [ ] `commands/*.rs`：design §5 全部命令，全部 `async`；错误统一 `{ code, message }`
-- [ ] 插件：`tauri-plugin-dialog`、`tauri-plugin-clipboard-manager`
-- [ ] `capabilities/default.json`：窗口最小化 / 切换最大化 / 关闭 / 拖动 / 显示、事件监听、`dialog:allow-open`、`dialog:allow-save`、`clipboard-manager:allow-write-text`——**只开用到的**
-- [ ] 用显式权限替换脚手架的 `core:default`；`tauri.conf.json` 的 `app.security.csp` 从 `null` 改为严格策略（`default-src 'self'`，放行 Tauri IPC 所需的 `ipc:` / `http://ipc.localhost`，样式允许 `'unsafe-inline'` 以兼容 Radix 的内联样式），并在 CI 冒烟中确认页面仍能加载
-- [ ] 主窗口代码创建（design §7：尺寸、`visible(false)`、`decorations(false)`；macOS 用 Overlay 标题栏）
-- [ ] 退出拦截：`CloseRequested` + `ExitRequested` → `app://close-requested`；`quitApp` 防重入（design §4.5）
-- [ ] `testProxy`：`reqwest`（`rustls-tls`、`socks`），ipinfo → ip-api 回退，10 s 超时
-- [ ] `detectKernels`：`research/fingerprint-chromium-cli.md` §8 的候选位置
-- [ ] 导入 / 导出（design §5 细则）
-- [ ] `StatusSink` 的 Tauri 实现。**约束（P3 审查）**：sink 在启动器的运行表锁内被调用——只能向前端 emit，不得访问数据库（会与命令层的锁顺序相反），也不得注册会回调启动器的 Rust 侧 `listen`（Tauri 在 `emit` 内同步执行它们，std `Mutex` 不可重入）
-- [ ] 保存时的「两个 profile 共用同一自定义 user-data-dir」检查：路径先规范化（Windows 下大小写折叠）再比较；P3 的运行时检查只覆盖已在运行的 profile
-- [ ] `addKernel` 选中 `.app` 目录时先用 `kernel::probe::bundle_executable` 解析出内部可执行文件，再做可执行检查与版本探测
-- [ ] （可选）单次运行中 profile 日志无上限增长（只在启动时截断到 5 MB 以内）：如有需要改为运行中按大小轮转
-- [ ] 测试：导入导出往返；`purgeProfile(dropUserData)` 不删除 `user_data_root` 之外的目录
-- [ ] `previewCommand` 在没有任何内核时：用占位程序名 `chrome` 构造临时 `Kernel`，参数集按 `effective_major(None)`（最新）；`validateProfileForKernel` 同理
-- [ ] 命令层策略（P1 审查遗留）：删除（软删除 / 永久删除）运行中的 profile 时拒绝，错误码 `profile_running`；两个 profile 指向同一个自定义 user-data-dir 时保存即报 `conflict`；`testProxy` 的 URL 同样要给 IPv6 主机加方括号
-- [ ] 设置页 / 文件对话框：Windows「复制为路径」带来的首尾引号在前端去掉再提交
+- [x] `commands/*.rs`：design §5 全部命令，全部 `async`；错误统一 `{ code, message }`
+- [x] **TS 类型由 Rust 生成**（主会话决定，2026-10-13）：用 `ts-rs` 给 bridge 用到的全部 DTO / 事件载荷 / 错误类型派生 TS，导出到 `src/lib/bindings/`（提交进仓库）；一个 `cargo test` 负责导出，CI 在 `cargo test` 之后执行 `git diff --exit-code src/lib/bindings` 防止漂移。P5 的 `bridge.ts` 只引用生成的类型，不手写 DTO
+- [x] 插件：`tauri-plugin-dialog`、`tauri-plugin-clipboard-manager`
+- [x] `capabilities/default.json`：窗口最小化 / 切换最大化 / 关闭 / 拖动 / 显示、事件监听、`dialog:allow-open`、`dialog:allow-save`、`clipboard-manager:allow-write-text`——**只开用到的**
+- [x] 用显式权限替换脚手架的 `core:default`；`tauri.conf.json` 的 `app.security.csp` 从 `null` 改为严格策略（`default-src 'self'`，放行 Tauri IPC 所需的 `ipc:` / `http://ipc.localhost`，样式允许 `'unsafe-inline'` 以兼容 Radix 的内联样式），并在 CI 冒烟中确认页面仍能加载（策略已设；加载验证随 P5 的冒烟升级）
+- [x] 主窗口代码创建（design §7：尺寸、`visible(false)`、`decorations(false)`；macOS 用 Overlay 标题栏）
+- [x] 退出拦截：`CloseRequested` + `ExitRequested` → `app://close-requested`；`quitApp` 防重入（design §4.5）
+- [x] `testProxy`：`reqwest`（`rustls-tls`、`socks`），ipinfo → ip-api 回退，10 s 超时
+- [x] `detectKernels`：`research/fingerprint-chromium-cli.md` §8 的候选位置
+- [x] 导入 / 导出（design §5 细则）
+- [x] `StatusSink` 的 Tauri 实现。**约束（P3 审查）**：sink 在启动器的运行表锁内被调用——只能向前端 emit，不得访问数据库（会与命令层的锁顺序相反），也不得注册会回调启动器的 Rust 侧 `listen`（Tauri 在 `emit` 内同步执行它们，std `Mutex` 不可重入）
+- [x] 保存时的「两个 profile 共用同一自定义 user-data-dir」检查：路径先规范化（Windows 下大小写折叠）再比较；P3 的运行时检查只覆盖已在运行的 profile
+- [x] `addKernel` 选中 `.app` 目录时先用 `kernel::probe::bundle_executable` 解析出内部可执行文件，再做可执行检查与版本探测
+- [ ] （可选，未做）单次运行中 profile 日志无上限增长（只在启动时截断到 5 MB 以内）：如有需要改为运行中按大小轮转
+- [x] 测试：导入导出往返；`purgeProfile(dropUserData)` 不删除 `user_data_root` 之外的目录
+- [x] `previewCommand` 在没有任何内核时：用占位程序名 `chrome` 构造临时 `Kernel`，参数集按 `effective_major(None)`（最新）；`validateProfileForKernel` 同理
+- [x] 命令层策略（P1 审查遗留）：删除（软删除 / 永久删除）运行中的 profile 时拒绝，错误码 `profile_running`；两个 profile 指向同一个自定义 user-data-dir 时保存即报 `conflict`；`testProxy` 的 URL 同样要给 IPv6 主机加方括号
+- [ ] 设置页 / 文件对话框：Windows「复制为路径」带来的首尾引号在前端去掉再提交（前端事项，移交 P5 / P9）
 
 **验证**：同 P1；推送后 CI 的 Linux 冒烟确认主窗口按代码创建后应用仍能正常启动。
+
+结果（实现 agent，2026-10-13）：本机 lib 143 个单元测试 + 17 个假内核生命周期测试（新增 `running_profiles_cannot_be_deleted`）+ 3 个真 Chromium 测试（`--ignored`）通过；`npm run check`、`cargo fmt --check`、`cargo clippy --all-targets -D warnings`（`RUSTFLAGS=-D warnings`）全绿；actionlint 通过。Windows / macOS 分支本机未编译（新增的平台差异只有 `cfg!` 表达式与一个 `cfg(windows)` 测试），首次验证在 CI。
+
+结构：`commands/{profiles,launch,kernels,library,app}.rs` 只做参数转发；业务在 `services/{profiles,transfer,kernels,preview,proxy_check}.rs`（不依赖 Tauri，单测直接调用）；`state.rs`（`AppState`：DB + `Launcher` + `AppPaths`，`db()` 走 `spawn_blocking`）、`paths.rs`（目录布局与路径比较）、`events.rs`（事件名、`CloseRequested`、`TauriSink`）、`shell.rs`（窗口、显示兜底、退出流程）、`bindings.rs`（ts-rs 导出，仅测试构建）。
+
+偏差：
+
+- 命令签名（design §5 已同步）：`previewCommand(draft, profileId)`、`validateProfileForKernel(draft)` 一律取 `draft.kernelId`；`purgeProfile` 返回 `PurgeResult`；`batchLaunch` 返回最终 `BatchProgress`；新增 `getAppInfo`；新错误码 `kernel_version_unknown`、`proxy_test_failed`。
+- 退出（design §4.5 已同步）：不拦截 `RunEvent::ExitRequested`——tao 0.37 只在最后一个窗口销毁后才发它，已无处弹框；macOS Cmd+Q 不经过任何可拦截事件。改为 `CloseRequested` 为唯一确认点，`RunEvent::Exit` 中同步 `launcher.shutdown()` 兜底所有路径（含 Cmd+Q）。前端未就绪（从未调用 `showMainWindow`）时关闭不弹框，直接走退出流程。
+- user-data-dir 检查从「相同」扩为「相同或互为包含」（含回收站中的 profile、他人的默认目录），macOS 也忽略大小写；purge 比较 canonical 路径，目录为符号链接 / 等于根目录 / 与他人重叠时保留。
+- 导出不含内核绑定（机器相关）；复制时原 profile 无种子则副本仍无种子（不擅自开启指纹）。
+- `detectKernels` 的 Linux AppImage 候选要求文件名含 `chromium`（探测会执行它）。
+- reqwest 0.13 的 TLS 用 `rustls-no-provider` + `rustls/ring`（默认的 aws-lc-rs 在 Windows 上构建需额外工具）；SOCKS5 测试用 `socks5h`。
+- ts-rs 为 dev-dependency，类型以 `cfg_attr(test, derive(TS))` 派生；生成目录不经 Prettier，参与 tsc / ESLint。CI 用 `git status --porcelain` 而非 `git diff --exit-code` 检查（后者看不到新增文件）。ts-rs 编译时会打印一条 `deserialize_with` 无法解析的提示（`SettingsPatch.userDataRoot`，预期内，其 TS 类型由 `ts(optional_fields)` 给出）。
+- CSP 加 `dangerousDisableAssetCspModification: ["style-src"]`，否则 Tauri 注入的 nonce 会使 `'unsafe-inline'` 失效。CSP 的实际加载验证待 P5 的冒烟升级（`FPL_SMOKE_EXIT_ON_READY` 的 Rust 侧已就位，ci.yml 冒烟判定未改）。
+- 未做：日志按大小轮转（可选项）；Windows「复制为路径」引号处理属前端。
+
+审查后（trellis-check）：导入在解析时限制最多 10 000 条 profile，并去掉中间的 `serde_json::Value` 整树（32 MiB 的 `[{},{},…]` 原本会膨胀到数 GB 而 OOM），按上限读取文件而不信任事先的 `metadata` 大小；`probeKernel` 要求绝对路径（裸名会经 `PATH` 查找并以 `--version` 执行）；自定义 user-data-dir 不得是数据根目录本身或其上级（原先只在已有默认目录 profile 时才拒绝）；`testProxy` 的响应体最多读 64 KiB、不跟随重定向（回退服务是经用户代理的明文 HTTP），并新增经本地假代理的离线端到端测试（回退与超限）。共 149 个单元测试。退出流程逐条对照 tauri 2.12.3 / tao 0.37.1 源码核对无误（`RunEvent::Exit` 中 `block_on` 不会死锁：sink 的 `emit` 在工作线程上只投递到事件循环代理，不等待主线程；`tracing` feature 未开启，`eval_script` 不阻塞）。移交前端：重复的 `app://close-requested` 由前端去重（P10）；Tauri 自身的参数 / ACL 错误以纯字符串拒绝，`bridge.ts` 统一包装（P5）。
 
 **提交**：`feat(commands): tauri command layer, window, exit handling`
 
@@ -234,12 +255,13 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 ## P5 前端地基
 
 - [ ] `src/index.css`：用本项目主题**替换** shadcn init 写入的 neutral 默认主题；按 `research/simprint-ui-reference.md` §1 **自行编写**主题变量、`@theme inline` 映射、基础层、滚动条、keyframes（§1.4）、对话框遮罩 `top: 48px`；字体按名称引用系统字体（§1.3），不打包字体文件
-- [ ] `lib/bridge.ts`：design §5 全部命令与事件的类型化封装；DTO 类型与 Rust 保持 camelCase 一致
+- [ ] `lib/bridge.ts`：design §5 全部命令与事件的类型化封装；DTO 类型与 Rust 保持 camelCase 一致。Tauri 自身的拒绝（参数反序列化失败、ACL 拒绝）是纯字符串而非 `{ code, message }`，在 bridge 内统一包装成 `AppError`（design §5）
 - [ ] `lib/bridge.mock.ts`：内存实现 + 种子数据（约 25 个 profile，覆盖运行中 / 已删除 / 多分组 / 多标签 / 有无代理；3 个内核：142、144、150），模拟启动 → 运行 → 停止的状态事件；仅 `import.meta.env.DEV` 且无 `__TAURI_INTERNALS__` 时加载
 - [ ] mock 模式下支持 `?theme=light|dark&lang=zh-CN|en` 覆盖，供截图使用
 - [ ] i18n：`i18n/index.ts` + `registry.ts`；各 feature 自带 `i18n.ts`（zh-CN + en）；`common` 命名空间放通用文案
 - [ ] 主题：设置表驱动的 ThemeProvider（`light` / `dark` / `system`，监听系统主题变化）
 - [ ] 启动引导：`getSettings()` → 初始化 i18n 与主题 → 渲染 → `showMainWindow()`
+- [ ] **CI 冒烟升级**（主会话决定）：Rust 侧在环境变量 `FPL_SMOKE_EXIT_ON_READY=1` 时，收到 `showMainWindow` 调用即 `app.exit(0)`；ci.yml 的 xvfb 冒烟改为「设置该变量，60 s 内必须以 0 退出」——这样 CI 验证的是：WebView 加载前端、在正式 CSP 下完成一次 IPC 往返。原「15 s 仍存活」的判定作废。（Rust 侧已在 P4 完成：`shell::SMOKE_EXIT_ON_READY_ENV`；本阶段只需前端调用 `showMainWindow` 并改 ci.yml）
 - [ ] 运行态 store：`listRunning()` + 订阅 `profile://status-changed`
 - [ ] 路由骨架（design §6 表格），页面先放占位
 - [ ] shadcn 组件按需 `npx shadcn@latest add`。部分组件（如 dialog、sheet、pagination）自带硬编码读屏文案（`<span className="sr-only">Close</span>` 等），会触发 `i18next/no-literal-string`：生成后改为 `t()` 文案，不要为此放宽 lint 规则。组件列表：（button、input、label、select、checkbox、switch、tooltip、dropdown-menu、dialog、alert-dialog、popover、scroll-area、separator、badge、pagination、textarea、command、sonner、form 等）
@@ -257,7 +279,7 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 依据 `research/simprint-ui-reference.md` §2–§6，**自行实现**：
 
 - [ ] `app-background.tsx`：双层 canvas（网格 / 点阵 / 噪点 + 模糊光晕），按 DPR 缩放，主题切换重绘，resize debounce 150 ms
-- [ ] `app-titlebar.tsx`：四槽位；品牌（logo + 名称）、面包屑、状态区（主题切换、语言切换）、窗口控制（拖拽把手 + 三按钮，关闭 hover 为 destructive）；macOS 隐藏窗口控制、品牌区左留白
+- [ ] `app-titlebar.tsx`：四槽位；品牌（logo + 名称）、面包屑、状态区（主题切换、语言切换）、窗口控制（拖拽把手 + 三按钮，关闭 hover 为 destructive）；macOS 隐藏窗口控制、品牌区左留白。最大化 / 还原图标随窗口状态切换，需要在 capabilities 中加 `core:window:allow-is-maximized`（P4 审查）
 - [ ] `app-sidebar.tsx`：`w-16 ↔ w-58`、毛玻璃、渐变 CTA「新建配置」、导航项（激活竖条、tooltip、分组标题）、折叠按钮动画；折叠状态存 `settings.sidebar_collapsed`
 - [ ] `app-layout.tsx`：§3 的骨架
 
@@ -277,7 +299,7 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 - [ ] 启动 / 停止按钮四态（未运行 / 启动中 / 运行中 / 停止中）、运行中行底色、启动 / 停止进度遮罩（用主题无关颜色，参考文档 §7.2）；操作下拉：编辑、复制、导出、删除
 - [ ] 分页条；批量浮条（普通 / 回收站两套）
 - [ ] 分组筛选需要「未分组」选项：`ProfileQuery.groupId` 目前无法表达，届时在 P1 的查询上加一个显式的 ungrouped 条件
-- [ ] 对话框：删除确认、永久删除（含「同时删除浏览器数据目录」复选，说明仅删默认目录）、移动分组、设置标签、搜索
+- [ ] 对话框：删除确认、永久删除（含「同时删除浏览器数据目录」复选；说明文字与后端规则一致：只删除位于数据根目录内的目录，根目录外的自定义目录永不删除，与其他配置共用的目录也会保留——P4 审查后定稿）、移动分组、设置标签、搜索
 - [ ] 导入 / 导出接 dialog 插件的打开 / 保存对话框
 
 **验证**：`npm run check`；`npm run screenshots`（列表有数据、运行中、多选浮条、回收站、空状态，浅 / 深 × 中 / 英）。
@@ -315,7 +337,7 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 - [ ] 代理中心：列表 + 增删改对话框（仅协议 / 主机 / 端口 / 名称 / 备注，**无用户名密码字段**，附说明）+ 连通性测试（出口 IP / 国家 / 城市 / 时区）
 - [ ] 设置页：
   - 内核管理：列表（名称、路径、版本、默认）；添加（文件对话框 → `probeKernel` → 探测失败时要求手填大版本号）；「自动探测」对话框列出候选，用户勾选确认后才加入；设默认；删除
-  - 浏览器数据根目录（目录对话框）
+  - 浏览器数据根目录（目录对话框）。修改时若新根目录与现有自定义 user-data-dir 相互嵌套，给出警告（P4 审查遗留）
   - 语言、主题
   - 批量启动并发上限与间隔
 
@@ -328,9 +350,10 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 ## P10 批量、退出确认、收尾
 
 - [ ] 批量启动 / 停止接通，`batch://progress` 用 sonner 显示进度
-- [ ] `app://close-requested` → 确认框（显示运行中数量）→ `quitApp()`
+- [ ] `app://close-requested` → 确认框（显示运行中数量）→ `quitApp()`；确认框已打开时再收到该事件只更新数量，不叠加第二个（标题栏不被遮罩覆盖，关闭按钮仍可点，design §4.5）
 - [ ] en 文案补全；`npm run lint` 中 `i18next/no-literal-string` 零告警（A10）
 - [ ] 错误码 → i18n 文案映射全覆盖（design §5 错误约定）
+- [ ] 启动时数据库打开失败（损坏、无权限、版本过新）目前在 `setup()` 中 panic 且无任何提示：改为弹出原生错误对话框（说明数据库路径与原因，提供「退出」），不得静默崩溃（P4 审查遗留，主会话决定）
 
 **验证**：本机开发循环检查；真 Chromium `--ignored` 测试；`npm run screenshots`（退出确认框、批量进度）。
 

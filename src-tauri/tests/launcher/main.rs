@@ -53,6 +53,7 @@ const TESTS: &[Test] = tests![
     cases::shutdown_stops_everything,
     cases::stderr_is_drained_and_logged,
     cases::probe_reads_the_version_flag,
+    cases::running_profiles_cannot_be_deleted,
     #[cfg(target_os = "linux")]
     real_chrome::real_chrome_starts_and_stops_without_remnants(ignored),
     #[cfg(target_os = "linux")]

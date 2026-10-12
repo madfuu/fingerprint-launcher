@@ -13,6 +13,7 @@ use crate::error::AppResult;
 pub(crate) const COLUMNS: &[&str] = &["id", "name", "color", "sort_order", "created_at"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Group {
     pub id: String,
@@ -25,6 +26,7 @@ pub struct Group {
 
 /// Editable fields of a group.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GroupInput {
     pub name: String,
@@ -74,6 +76,15 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Group> {
     conn.query_row(&select("WHERE g.id = ?1"), [id], |row| from_row(row, ""))
         .optional()?
         .ok_or_else(|| not_found("group", id))
+}
+
+/// The group named `name`, compared like the unique index (trimmed, ASCII case-insensitive).
+pub fn find_by_name(conn: &Connection, name: &str) -> AppResult<Option<Group>> {
+    Ok(conn
+        .query_row(&select("WHERE g.name = ?1"), [name.trim()], |row| {
+            from_row(row, "")
+        })
+        .optional()?)
 }
 
 pub fn create(conn: &Connection, input: GroupInput) -> AppResult<Group> {
@@ -184,6 +195,14 @@ mod tests {
         // Renaming to its own name, or changing only its case, is not a conflict.
         update(&db.conn, &a.id, input("Work", Some("#000"), 0)).unwrap();
         update(&db.conn, &a.id, input("WORK", Some("#000"), 0)).unwrap();
+    }
+
+    #[test]
+    fn find_by_name_ignores_ascii_case() {
+        let db = TestDb::new();
+        let work = db.group("Work");
+        assert_eq!(find_by_name(&db.conn, " work ").unwrap(), Some(work));
+        assert_eq!(find_by_name(&db.conn, "Home").unwrap(), None);
     }
 
     #[test]

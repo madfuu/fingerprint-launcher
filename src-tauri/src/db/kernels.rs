@@ -22,6 +22,7 @@ const COLUMNS: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Kernel {
     pub id: String,
@@ -37,6 +38,7 @@ pub struct Kernel {
 
 /// Editable fields of a kernel.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KernelInput {
     pub name: String,

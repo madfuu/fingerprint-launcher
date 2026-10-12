@@ -30,6 +30,7 @@ pub const VERSION_FLAG_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How a version was found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ProbeMethod {
     PeVersion,
@@ -40,6 +41,7 @@ pub enum ProbeMethod {
 
 /// Result of [`probe_kernel`]. All fields are `None` when the version could not be found.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KernelProbe {
     /// Selects the argument set (design §3.2).

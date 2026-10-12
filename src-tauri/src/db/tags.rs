@@ -13,6 +13,7 @@ use crate::error::AppResult;
 pub(crate) const COLUMNS: &[&str] = &["id", "name", "color", "created_at"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Tag {
     pub id: String,
@@ -24,6 +25,7 @@ pub struct Tag {
 
 /// Editable fields of a tag.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct TagInput {
     pub name: String,
@@ -67,6 +69,15 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Tag> {
     conn.query_row(&select("WHERE t.id = ?1"), [id], |row| from_row(row, ""))
         .optional()?
         .ok_or_else(|| not_found("tag", id))
+}
+
+/// The tag named `name`, compared like the unique index (trimmed, ASCII case-insensitive).
+pub fn find_by_name(conn: &Connection, name: &str) -> AppResult<Option<Tag>> {
+    Ok(conn
+        .query_row(&select("WHERE t.name = ?1"), [name.trim()], |row| {
+            from_row(row, "")
+        })
+        .optional()?)
 }
 
 pub fn create(conn: &Connection, input: TagInput) -> AppResult<Tag> {
@@ -161,6 +172,14 @@ mod tests {
             code(update(&db.conn, "missing", input("x", "#fff"))),
             ErrorCode::NotFound
         );
+    }
+
+    #[test]
+    fn find_by_name_ignores_ascii_case() {
+        let db = TestDb::new();
+        let vip = db.tag("VIP");
+        assert_eq!(find_by_name(&db.conn, "vip").unwrap(), Some(vip));
+        assert_eq!(find_by_name(&db.conn, "ads").unwrap(), None);
     }
 
     #[test]

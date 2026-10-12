@@ -84,6 +84,7 @@ const COLUMNS: &[&str] = &[
 /// `None` / empty means "do not pass the argument". Missing JSON fields take the defaults of
 /// [`ProfileDraft::default`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", default)]
 pub struct ProfileDraft {
     pub name: String,
@@ -220,6 +221,7 @@ impl ProfileDraft {
 
 /// A stored profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
     pub id: String,
@@ -234,6 +236,7 @@ pub struct Profile {
 
 /// A list row: the profile plus the group, proxy and tags it references.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileRow {
     #[serde(flatten)]
@@ -245,6 +248,7 @@ pub struct ProfileRow {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ProfileView {
     /// Every profile not in the trash.
@@ -257,6 +261,7 @@ pub enum ProfileView {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", default)]
 pub struct ProfileQuery {
     /// 1-based.
@@ -661,6 +666,29 @@ pub fn set_group(
         }
         Ok(())
     })
+}
+
+/// Who uses which user data directory: every profile, trashed ones included (restoring one
+/// gives it its directory back).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirOwner {
+    pub id: String,
+    pub name: String,
+    /// The profile's own setting; `None` = `<user_data_root>/<id>`.
+    pub user_data_dir: Option<String>,
+}
+
+pub fn dir_owners(conn: &Connection) -> AppResult<Vec<DirOwner>> {
+    let mut stmt =
+        conn.prepare("SELECT id, name, user_data_dir FROM profiles ORDER BY created_at, rowid")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(DirOwner {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            user_data_dir: row.get(2)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 /// Records a launch (design §4.2 step 6).
@@ -1399,6 +1427,37 @@ mod tests {
         assert_eq!(err.code, ErrorCode::InvalidInput);
         let err = set_tags(&db.conn, "missing", &[]).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn dir_owners_include_trashed_profiles() {
+        let db = TestDb::new();
+        let a = db.profile("a");
+        let own = db.abs_path("own");
+        let b = create(
+            &db.conn,
+            ProfileDraft {
+                user_data_dir: Some(own.clone()),
+                ..TestDb::draft("b")
+            },
+        )
+        .unwrap();
+        soft_delete(&db.conn, &b.id).unwrap();
+        assert_eq!(
+            dir_owners(&db.conn).unwrap(),
+            [
+                DirOwner {
+                    id: a.id,
+                    name: "a".into(),
+                    user_data_dir: None
+                },
+                DirOwner {
+                    id: b.id,
+                    name: "b".into(),
+                    user_data_dir: Some(own)
+                },
+            ]
+        );
     }
 
     #[test]

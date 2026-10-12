@@ -44,6 +44,14 @@ pub fn user_data_dir(profile: &Profile, root: &Path) -> PathBuf {
         .map_or_else(|| root.join(&profile.id), PathBuf::from)
 }
 
+/// The root of default user data directories: the `user_data_root` setting, or
+/// `default_root` (`<app_data_dir>/profiles`) while it is unset.
+pub fn user_data_root(conn: &Connection, default_root: &Path) -> AppResult<PathBuf> {
+    Ok(settings::get(conn)?
+        .user_data_root
+        .map_or_else(|| default_root.to_owned(), PathBuf::from))
+}
+
 /// [`LaunchSource`] over the application database.
 pub struct DbLaunchSource {
     db: Arc<Mutex<Connection>>,
@@ -87,9 +95,7 @@ impl LaunchSource for DbLaunchSource {
             .as_deref()
             .map(|proxy_id| proxies::get(&conn, proxy_id))
             .transpose()?;
-        let root = settings::get(&conn)?
-            .user_data_root
-            .map_or_else(|| self.default_user_data_root.clone(), PathBuf::from);
+        let root = user_data_root(&conn, &self.default_user_data_root)?;
         drop(conn);
 
         let user_data_dir = user_data_dir(&profile, &root);

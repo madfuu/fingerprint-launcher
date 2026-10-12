@@ -4,6 +4,9 @@
 //!
 //! Variant order is significant: the derived `Ord` follows it, and callers use it as the
 //! canonical order (e.g. the `--disable-spoofing` CSV).
+//!
+//! In test builds the enum also derives `ts_rs::TS` with the same literals, so the generated
+//! TypeScript union matches the wire format too.
 
 macro_rules! text_enum {
     (
@@ -14,8 +17,10 @@ macro_rules! text_enum {
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        // The TypeScript binding is the union of the literals (`src/bindings.rs`).
+        #[cfg_attr(test, derive(ts_rs::TS))]
         pub enum $name {
-            $( $(#[$vmeta])* $variant ),+
+            $( $(#[$vmeta])* #[cfg_attr(test, ts(rename = $text))] $variant ),+
         }
 
         impl $name {
