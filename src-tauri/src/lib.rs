@@ -1,5 +1,8 @@
 //! Fingerprint Launcher — Tauri application entry point.
 
+pub mod db;
+pub mod error;
+
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
 /// Label of the single application window. Referenced by `capabilities/default.json`.

@@ -98,10 +98,12 @@ npm run check
     - `cargo fmt --check`（仅 ubuntu）、`cargo clippy --all-targets -- -D warnings`、`cargo test`
   - `bundle` job（`needs: check`），同一矩阵：`tauri build`（Linux `deb` + `appimage`，Windows `nsis`，macOS `dmg`），`actions/upload-artifact` 上传安装包；ubuntu 额外对产物二进制做 `xvfb-run` 15 s 冒烟（期望退出码 124）
   - `concurrency` 按分支取消过时的运行
-- [ ] 添加远端 `origin` = `git@github.com:madfuu/fingerprint-launcher.git`，`git ls-remote origin` 验证 Deploy key 可用后推送 `main`（包含 P0 的提交）
-- [ ] 轮询 Actions 结果直到三平台 `check` 与 `bundle` 全绿；修复后重推
+- [x] 添加远端 `origin` = `git@github.com:madfuu/fingerprint-launcher.git`，`git ls-remote origin` 验证 Deploy key 可用后推送 `main`（包含 P0 的提交）
+- [x] 轮询 Actions 结果直到三平台 `check` 与 `bundle` 全绿；修复后重推
 
 **验证**：Actions 上该提交的 run 结论为 `success`；三平台安装包产物存在。
+
+结果（2026-10-13）：首次推送 `002dcd9`，run 38277815453 全绿——三平台 `check` 与 `bundle`（含 Linux xvfb 冒烟）均 success。之后的用量控制改动（`e0c8eba`）在下一个里程碑随 P3 推送。
 
 **提交**：`ci: three-platform check and bundle workflow`
 
@@ -109,18 +111,22 @@ npm run check
 
 ## P1 Rust 数据层
 
-- [ ] 依赖：`rusqlite`（`bundled`）、`uuid`（v4）、`chrono`（serde）、`serde` / `serde_json`、`thiserror`、`tokio`；dev：`tempfile`
-- [ ] `src-tauri/src/db/`：`open(path)` 每次连接 `PRAGMA foreign_keys = ON` + `journal_mode = WAL`；migration v1 按 design §2.2 原样落地；`meta.schema_version`
-- [ ] 仓储：kernels / groups / tags / proxies / profiles / profile_tags / settings；profiles 支持 design §5 的 `ProfileQuery`（分页、view、分组、标签、关键字），软删除 / 恢复 / 永久删除
-- [ ] 错误类型 `AppError { code, message }`，可序列化为前端约定的形状
-- [ ] DTO 一律 `#[serde(rename_all = "camelCase")]`
-- [ ] 测试（临时目录 SQLite）：
+- [x] 依赖：`rusqlite`（`bundled`）、`uuid`（v4）、`chrono`（serde）、`serde` / `serde_json`、`thiserror`、`tokio`；dev：`tempfile`
+- [x] `src-tauri/src/db/`：`open(path)` 每次连接 `PRAGMA foreign_keys = ON` + `journal_mode = WAL`；migration v1 按 design §2.2 原样落地；`meta.schema_version`
+- [x] 仓储：kernels / groups / tags / proxies / profiles / profile_tags / settings；profiles 支持 design §5 的 `ProfileQuery`（分页、view、分组、标签、关键字），软删除 / 恢复 / 永久删除
+- [x] 错误类型 `AppError { code, message }`，可序列化为前端约定的形状
+- [x] DTO 一律 `#[serde(rename_all = "camelCase")]`
+- [x] 测试（临时目录 SQLite）：
   - migration 可重复执行
   - 删除分组 → profile.group_id 置 NULL；删除 profile → profile_tags 级联删除
   - 分页边界、`view = trash` 只返回已删除、关键字与标签组合过滤
   - settings 默认值（design §2.2）
 
 **验证**：`cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`
+
+结果：51 个测试通过。偏差：`tokio` 推迟到 P3 再加（P1 未用到）；chrono 未开 `serde`（DTO 时间戳为 RFC 3339 字符串）。推迟到 P4：复制 / 导入导出、默认 user-data-dir 解析、`addKernel` 的名称与版本补全、复制时「副本」后缀的本地化。
+
+审查后：嵌套 `in_tx` 改为 SAVEPOINT（外层捕获错误继续执行时不残留半写数据）；代理主机拒绝带端口的写法；分组与标签名称改为大小写不敏感唯一（`COLLATE NOCASE`，design §2.2 已同步）。共 53 个测试。未来 v2 若要重建表，需在事务外临时关闭 `foreign_keys`。
 
 **提交**：`feat(db): sqlite schema v1 and repositories`
 
@@ -130,7 +136,9 @@ npm run check
 
 - [ ] `kernel/args.rs`：`ArgSupport::for_major`、`build_launch_plan`、`validate_profile_for_kernel`，严格按 design §3.2 / §3.3 的区间与顺序
 - [ ] `shell_line` 转义（design §3.4），`HostPlatform` 显式传入
-- [ ] `extra_args` 用 `shell-words` 切分；切分失败（引号不配对）返回校验错误而非 panic
+- [ ] `extra_args` 用 `shell-words` 切分；切分失败（引号不配对）返回校验错误而非 panic；同时在 `ProfileDraft` 保存时（`profiles` 的 normalized 校验）就校验，保存即报错，而不是等到启动才失败
+- [ ] `build_launch_plan` 接收的可能是**未保存的编辑器草稿**：空白字符串字段一律视为未设置（不生成 `--x=`）；未保存的 profile 没有 id，预览时 user-data-dir 由调用方传入占位路径
+- [ ] 代理主机为 IPv6 时，`--proxy-server` 中用方括号包裹（`socks5://[::1]:1080`）；P1 的校验只接受不带方括号的裸 IPv6
 - [ ] 测试（design §3.5 全部用例）：
   - README 两个官方示例：argv 与 `shell_line` 精确断言（argv 中无引号）
   - major ∈ {130, 131, 138, 139, 141, 142, 143, 144, 150}：参数集断言
@@ -194,6 +202,8 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 - [ ] 导入 / 导出（design §5 细则）
 - [ ] `StatusSink` 的 Tauri 实现
 - [ ] 测试：导入导出往返；`purgeProfile(dropUserData)` 不删除 `user_data_root` 之外的目录
+- [ ] 命令层策略（P1 审查遗留）：删除（软删除 / 永久删除）运行中的 profile 时拒绝，错误码 `profile_running`；两个 profile 指向同一个自定义 user-data-dir 时保存即报 `conflict`；`testProxy` 的 URL 同样要给 IPv6 主机加方括号
+- [ ] 设置页 / 文件对话框：Windows「复制为路径」带来的首尾引号在前端去掉再提交
 
 **验证**：同 P1；推送后 CI 的 Linux 冒烟确认主窗口按代码创建后应用仍能正常启动。
 
@@ -246,6 +256,7 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 - [ ] 列：`☐ / # / 指纹（平台图标 + 种子 mono）/ 名称（备注 tooltip）/ 代理 / 时区 / 分组 / 标签 / 状态 / 操作`
 - [ ] 启动 / 停止按钮四态（未运行 / 启动中 / 运行中 / 停止中）、运行中行底色、启动 / 停止进度遮罩（用主题无关颜色，参考文档 §7.2）；操作下拉：编辑、复制、导出、删除
 - [ ] 分页条；批量浮条（普通 / 回收站两套）
+- [ ] 分组筛选需要「未分组」选项：`ProfileQuery.groupId` 目前无法表达，届时在 P1 的查询上加一个显式的 ungrouped 条件
 - [ ] 对话框：删除确认、永久删除（含「同时删除浏览器数据目录」复选，说明仅删默认目录）、移动分组、设置标签、搜索
 - [ ] 导入 / 导出接 dialog 插件的打开 / 保存对话框
 

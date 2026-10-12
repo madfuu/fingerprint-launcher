@@ -83,12 +83,12 @@ CREATE TABLE kernels (
 );
 
 CREATE TABLE groups (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, color TEXT,
+  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, color TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
 );
 
 CREATE TABLE tags (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, color TEXT NOT NULL,
+  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, color TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 
@@ -172,7 +172,7 @@ pub struct LaunchPlan {
 
 /// 纯函数：无 IO、无全局状态。
 pub fn build_launch_plan(
-    profile: &ProfileConfig,
+    profile: &ProfileDraft,   // db::profiles::ProfileDraft（P1 定名，与前端 bridge 同名）
     kernel: &Kernel,
     proxy: Option<&Proxy>,
     user_data_dir: &Path,
@@ -373,6 +373,9 @@ showMainWindow(): Promise<void>          // 前端就绪后显示窗口
 细则：
 
 - `ProfileQuery`：`page / pageSize / view('all'|'running'|'trash') / groupId? / tagIds? / keyword?`，分页在 SQL 侧做。`view = running` 时以内存运行表的 id 集合过滤。
+- P1 落定的查询语义：列表按创建时间倒序，回收站按删除时间倒序；标签过滤为「命中任一所选标签」；关键字匹配名称、备注、种子（`%`、`_`、`\` 按字面匹配）；`view = running` 由调用方传入运行中 id 集合，且排除已删除。
+- 错误码（P1 落定）：`not_found`、`conflict`（唯一约束）、`invalid_input`（外键 / CHECK / 非空 / 校验失败）、`db`、`io`。P3/P4 新增的错误码在此追加。
+- `ProfileDraft` 含 `tagIds`，编辑器一次保存即可写入标签；`setProfileTags` 保留给列表页。
 - `probeKernel` 分平台（research §7）：Windows 读 PE 版本资源（`chrome.exe --version` 在 Windows 上不输出）；macOS 读 `Info.plist`；Linux AppImage 先解析文件名，再试 `--version`；tar.xz 执行 `--version`。全部失败返回 `null`，UI 要求用户手填大版本号，**不猜**。
 - `purgeProfile(dropUserData=true)` **只删除位于 `user_data_root` 之下的目录**；用户自定义到其他位置的目录永不由程序删除，只提示路径。
 - `testProxy`：经该代理请求 `https://ipinfo.io/json`（失败回退 `http://ip-api.com/json`），10 s 超时，回显出口 IP / 国家 / 城市 / 时区。仅用户点击时触发。
