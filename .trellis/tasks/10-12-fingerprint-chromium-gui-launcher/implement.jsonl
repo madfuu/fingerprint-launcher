@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/10-12-fingerprint-chromium-gui-launcher/research/fingerprint-chromium-cli.md", "reason": "上游 CLI 参数全表、版本门控时间线、官方示例 fixture、平台内核形态与版本探测——P2 参数构建与 P3 探测的依据"}
+{"file": ".trellis/tasks/10-12-fingerprint-chromium-gui-launcher/research/process-lifecycle.md", "reason": "三平台进程树终止、先温和后强制、stderr 读空与早退、单实例锁陷阱、Tauri 退出拦截与命令线程模型——P3/P4 的依据"}
+{"file": ".trellis/tasks/10-12-fingerprint-chromium-gui-launcher/research/simprint-ui-reference.md", "reason": "Simprint 外观的逐项样式（色值、尺寸、类名效果）与已知缺陷；只作视觉参照，禁止拷贝其代码——P5–P9 的依据"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Rust 命令/事件 ↔ bridge.ts 的跨层契约：DTO camelCase、错误形状、事件载荷"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "列表/对话框/表单在多个 feature 间重复，先抽公共组件再复制"}
