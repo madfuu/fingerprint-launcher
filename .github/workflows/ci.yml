@@ -163,17 +163,23 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # The app must still be running when `timeout` stops it (exit code 124).
+      # FPL_SMOKE_EXIT_ON_READY=1 makes the app exit 0 as soon as the frontend calls
+      # showMainWindow (src-tauri/src/shell.rs): exit 0 proves the WebView loaded the bundled
+      # frontend under the production CSP and completed an IPC round trip.
       - name: Smoke test under Xvfb
         if: runner.os == 'Linux'
         env:
           WEBKIT_DISABLE_DMABUF_RENDERER: '1'
           LIBGL_ALWAYS_SOFTWARE: '1'
+          FPL_SMOKE_EXIT_ON_READY: '1'
         run: |
           status=0
-          xvfb-run -a timeout 15 src-tauri/target/release/fingerprint-launcher || status=$?
-          if [ "$status" -ne 124 ]; then
-            echo "::error::Expected the app to still be running after 15 s (exit 124), got exit $status"
+          xvfb-run -a timeout 60 src-tauri/target/release/fingerprint-launcher || status=$?
+          if [ "$status" -eq 124 ]; then
+            echo "::error::The frontend did not call showMainWindow within 60 s (it failed to load or the IPC was blocked)"
+            exit 1
+          elif [ "$status" -ne 0 ]; then
+            echo "::error::Expected exit 0 once the frontend was ready, got exit $status"
             exit 1
           fi
-          echo "App stayed up for 15 s under Xvfb."
+          echo "Frontend loaded and completed the showMainWindow IPC under Xvfb."

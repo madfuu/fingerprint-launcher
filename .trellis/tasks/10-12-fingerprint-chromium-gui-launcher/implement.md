@@ -254,21 +254,42 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 
 ## P5 前端地基
 
-- [ ] `src/index.css`：用本项目主题**替换** shadcn init 写入的 neutral 默认主题；按 `research/simprint-ui-reference.md` §1 **自行编写**主题变量、`@theme inline` 映射、基础层、滚动条、keyframes（§1.4）、对话框遮罩 `top: 48px`；字体按名称引用系统字体（§1.3），不打包字体文件
-- [ ] `lib/bridge.ts`：design §5 全部命令与事件的类型化封装；DTO 类型与 Rust 保持 camelCase 一致。Tauri 自身的拒绝（参数反序列化失败、ACL 拒绝）是纯字符串而非 `{ code, message }`，在 bridge 内统一包装成 `AppError`（design §5）
-- [ ] `lib/bridge.mock.ts`：内存实现 + 种子数据（约 25 个 profile，覆盖运行中 / 已删除 / 多分组 / 多标签 / 有无代理；3 个内核：142、144、150），模拟启动 → 运行 → 停止的状态事件；仅 `import.meta.env.DEV` 且无 `__TAURI_INTERNALS__` 时加载
-- [ ] mock 模式下支持 `?theme=light|dark&lang=zh-CN|en` 覆盖，供截图使用
-- [ ] i18n：`i18n/index.ts` + `registry.ts`；各 feature 自带 `i18n.ts`（zh-CN + en）；`common` 命名空间放通用文案
-- [ ] 主题：设置表驱动的 ThemeProvider（`light` / `dark` / `system`，监听系统主题变化）
-- [ ] 启动引导：`getSettings()` → 初始化 i18n 与主题 → 渲染 → `showMainWindow()`
-- [ ] **CI 冒烟升级**（主会话决定）：Rust 侧在环境变量 `FPL_SMOKE_EXIT_ON_READY=1` 时，收到 `showMainWindow` 调用即 `app.exit(0)`；ci.yml 的 xvfb 冒烟改为「设置该变量，60 s 内必须以 0 退出」——这样 CI 验证的是：WebView 加载前端、在正式 CSP 下完成一次 IPC 往返。原「15 s 仍存活」的判定作废。（Rust 侧已在 P4 完成：`shell::SMOKE_EXIT_ON_READY_ENV`；本阶段只需前端调用 `showMainWindow` 并改 ci.yml）
-- [ ] 运行态 store：`listRunning()` + 订阅 `profile://status-changed`
-- [ ] 路由骨架（design §6 表格），页面先放占位
-- [ ] shadcn 组件按需 `npx shadcn@latest add`。部分组件（如 dialog、sheet、pagination）自带硬编码读屏文案（`<span className="sr-only">Close</span>` 等），会触发 `i18next/no-literal-string`：生成后改为 `t()` 文案，不要为此放宽 lint 规则。组件列表：（button、input、label、select、checkbox、switch、tooltip、dropdown-menu、dialog、alert-dialog、popover、scroll-area、separator、badge、pagination、textarea、command、sonner、form 等）
-- [ ] `scripts/screenshot.mjs`：`playwright-core`，可执行文件取 `FPL_SCREENSHOT_CHROME`（默认 Chrome for Testing 路径），启动 vite dev，按「路由 × 主题 × 语言」在 1438×828 截图到 `.screenshots/`；npm script `screenshots`
-- [ ] vitest：mock bridge 状态流转、运行态 store 增量更新
+- [x] `src/index.css`：用本项目主题**替换** shadcn init 写入的 neutral 默认主题；按 `research/simprint-ui-reference.md` §1 **自行编写**主题变量、`@theme inline` 映射、基础层、滚动条、keyframes（§1.4）、对话框遮罩 `top: 48px`；字体按名称引用系统字体（§1.3），不打包字体文件
+- [x] `lib/bridge.ts`：design §5 全部命令与事件的类型化封装；DTO 类型与 Rust 保持 camelCase 一致。Tauri 自身的拒绝（参数反序列化失败、ACL 拒绝）是纯字符串而非 `{ code, message }`，在 bridge 内统一包装成 `AppError`（design §5）
+- [x] `lib/bridge.mock.ts`：内存实现 + 种子数据（约 25 个 profile，覆盖运行中 / 已删除 / 多分组 / 多标签 / 有无代理；3 个内核：142、144、150），模拟启动 → 运行 → 停止的状态事件；仅 `import.meta.env.DEV` 且无 `__TAURI_INTERNALS__` 时加载
+- [x] mock 模式下支持 `?theme=light|dark&lang=zh-CN|en` 覆盖，供截图使用
+- [x] i18n：`i18n/index.ts` + `registry.ts`；各 feature 自带 `i18n.ts`（zh-CN + en）；`common` 命名空间放通用文案
+- [x] 主题：设置表驱动的 ThemeProvider（`light` / `dark` / `system`，监听系统主题变化）
+- [x] 启动引导：`getSettings()` → 初始化 i18n 与主题 → 渲染 → `showMainWindow()`
+- [x] **CI 冒烟升级**（主会话决定）：Rust 侧在环境变量 `FPL_SMOKE_EXIT_ON_READY=1` 时，收到 `showMainWindow` 调用即 `app.exit(0)`；ci.yml 的 xvfb 冒烟改为「设置该变量，60 s 内必须以 0 退出」——这样 CI 验证的是：WebView 加载前端、在正式 CSP 下完成一次 IPC 往返。原「15 s 仍存活」的判定作废。（Rust 侧已在 P4 完成：`shell::SMOKE_EXIT_ON_READY_ENV`；本阶段只需前端调用 `showMainWindow` 并改 ci.yml）
+- [x] 运行态 store：`listRunning()` + 订阅 `profile://status-changed`
+- [x] 路由骨架（design §6 表格），页面先放占位
+- [x] shadcn 组件按需 `npx shadcn@latest add`。部分组件（如 dialog、sheet、pagination）自带硬编码读屏文案（`<span className="sr-only">Close</span>` 等），会触发 `i18next/no-literal-string`：生成后改为 `t()` 文案，不要为此放宽 lint 规则。组件列表：（button、input、label、select、checkbox、switch、tooltip、dropdown-menu、dialog、alert-dialog、popover、scroll-area、separator、badge、pagination、textarea、command、sonner、form 等）
+- [x] `scripts/screenshot.mjs`：`playwright-core`，可执行文件取 `FPL_SCREENSHOT_CHROME`（默认 Chrome for Testing 路径），启动 vite dev，按「路由 × 主题 × 语言」在 1438×828 截图到 `.screenshots/`；npm script `screenshots`
+- [x] vitest：mock bridge 状态流转、运行态 store 增量更新
 
 **验证**：`npm run check`；`npm run screenshots` 能产出图片（此时为占位页）。
+
+结果（实现 agent，2026-10-13）：`npm run check` 全绿（typecheck、lint 零告警、vitest 6 个文件 51 个测试、vite build）；`npm run screenshots` 产出 6 路由 × 浅/深 × 中/英共 24 张图，人工抽看浅色 / 深色、中 / 英均正常渲染；actionlint + shellcheck 通过。生产构建 `dist/` 中检索 mock 特征串（`沙箱失败示例`、`createMockTransport`、`__FPL_MOCK__`、种子代理主机名等）均为 0 次、只有一个 JS chunk；对照构建（`NODE_ENV=development vite build --mode development`）中这些串出现在独立的 `bridge.mock-*.js` chunk 里，证明检索有效。未改 Rust，未跑 cargo。
+
+结构与决定（design §5 / §6 / §8 已同步）：
+
+- bridge：`bridge.ts`（类型化命令表 `Commands`、46 个命令函数、事件订阅、对话框 / 剪贴板封装、`BridgeError` + `toAppError` 错误归一）+ `bridge.tauri.ts`（唯一 import `@tauri-apps/*` 的文件）+ `bridge.mock.ts` / `lib/mock/`（dev 且非 Tauri 时动态 import）。ESLint `no-restricted-imports` 强制这两条边界，已用探针文件验证规则命中
+- 非 `AppError` 的拒绝一律归为 `invalid_input`（`ErrorCode` 无「内部错误」类；未知 code 保留在 message 中），映射表见 design §5
+- 运行态 store：先订阅、后快照，订阅后收到过事件的 profile 以事件为准（论证见 `running-store.ts` 头注释与 design §6），测试覆盖快照前 / 后到达的事件、失败重试
+- 启动：设置读取失败渲染错误页、渲染异常由 error boundary 接住，`showMainWindow()` 始终在 `finally` 中调用；`<html data-app-ready="true">` 为截图就绪信号
+- 截图脚本在本进程内运行 Vite（随机空闲端口、排除 5173），因此不存在需要按 PID 回收的子进程；浏览器由 playwright-core 关闭。已验证：过滤参数错误退出 2；Vite 启动后浏览器启动失败退出 1 且无残留；跑完后无 vite / chrome / esbuild 进程、端口已释放
+
+偏差：
+
+- shadcn 组件中硬编码的读屏 / 按钮文案（dialog、pagination、command 的默认标题）改为 `t()`；`sonner.tsx` 改用 `useResolvedTheme`，移除 shadcn 自动安装的 `next-themes`。lint 配置未加任何豁免：`position` / `reason` / `path` 这类标识属性改为常量或拆分组件（`SettingsReadError` / `RenderError`、`paths.editProfilePattern`）
+- mock 额外支持 `?os=` 覆盖与 `window.__FPL_MOCK__`（供 P6 截 macOS 标题栏、P10 触发退出确认事件）
+- 窗口控制（最小化 / 最大化 / 关闭 / 拖动）尚未进 bridge：P6 实现标题栏时加到 `Transport`（`@tauri-apps/*` 只能在 `bridge.tauri.ts` 中使用）
+- P4 移交的「Windows『复制为路径』首尾引号」处理推迟到 P9：P5 尚无路径输入框
+- 本机限制：截图只验证 Chromium 渲染；本机未装 PingFang / 微软雅黑 / Noto Sans CJK，中文以 WenQuanYi 等回退字体显示
+- 仓库既有问题（非 P5 引入）：`npx prettier --check .` 报 `src-tauri/tests/fixtures/pe/README.md`（`c464c86` 提交时表格未格式化）；本阶段已顺带把该表格按 Prettier 格式化（仅空白变化）
+
+审查后（trellis-check）：逐个核对 46 个命令封装与 `src-tauri/src/commands/**` 及 `lib.rs` 的注册表（命令名、参数键——tauri-macros 2.7.2 默认 `ArgumentCase::Camel`——与返回类型）全部一致，并新增 `src/lib/bridge.contract.test.ts`：以 Vite `?raw` 读取 Rust 源码，解析已注册命令及其非注入参数，断言每个封装恰好以该命令名与 camelCase 参数键调用（已用改坏一个参数键的变异验证会失败），此后契约漂移在 vitest 中即被发现。mock 对齐 Rust：draft 按 serde 读取（多余字段如 `id` / `deletedAt` / 行的 `group` 被忽略，缺失字段取 `ProfileDraft::default`——此前把整个 `Profile` 传给 `updateProfile` 会覆盖其 id 与删除时间）；列表同时间戳时按插入倒序（`rowid DESC`）；关键字与标签排序只折叠 ASCII 大小写（SQLite `LIKE` / `NOCASE`）；`batchSetGroup` / `batchAddTags` / `setProfileTags` 全有或全无并更新 `updatedAt`，未知分组为 `invalid_input`（外键）而非 `not_found`；种子中运行中 profile 的 `lastLaunchedAt` 与其启动时间一致。运行态 store：`dispose()` 后仍在进行中的 `init()` 不再写入 store，迟到的订阅会被立即退订。截图脚本：未知命令行选项与其他参数错误一样退出 2，SIGTERM 退出 143。共 7 个测试文件 56 个测试。
 
 **提交**：`feat(ui): theme, i18n, bridge, app shell foundation`
 
@@ -280,7 +301,10 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 
 - [ ] `app-background.tsx`：双层 canvas（网格 / 点阵 / 噪点 + 模糊光晕），按 DPR 缩放，主题切换重绘，resize debounce 150 ms
 - [ ] `app-titlebar.tsx`：四槽位；品牌（logo + 名称）、面包屑、状态区（主题切换、语言切换）、窗口控制（拖拽把手 + 三按钮，关闭 hover 为 destructive）；macOS 隐藏窗口控制、品牌区左留白。最大化 / 还原图标随窗口状态切换，需要在 capabilities 中加 `core:window:allow-is-maximized`（P4 审查）
+- [ ] 对话框打开时标题栏仍可用（P5 审查）：遮罩已从 48px 起（`index.css`），但 Radix 模态对话框会给 `body` 设 `pointer-events: none`（`@radix-ui/react-dismissable-layer`），并在外部 pointerdown 时关闭 Dialog。标题栏根元素须显式 `pointer-events-auto`，拖动 / 最小化 / 关闭才可用；并决定点标题栏是否应关闭已打开的 Dialog（必要时在 `onPointerDownOutside` 中对标题栏区域 `preventDefault`）。截图核对外再用 Playwright 在 mock 下点一次验证
 - [ ] `app-sidebar.tsx`：`w-16 ↔ w-58`、毛玻璃、渐变 CTA「新建配置」、导航项（激活竖条、tooltip、分组标题）、折叠按钮动画；折叠状态存 `settings.sidebar_collapsed`
+- [ ] **冒烟判定收紧**（P5 审查，主会话决定）：`showMainWindow` 增加参数 `bootOk: boolean`（Rust 命令 + bindings 重新生成 + bridge + mock）。正常运行时无论真假都显示窗口；`FPL_SMOKE_EXIT_ON_READY=1` 时 `bootOk` 为真才 `exit(0)`，为假则 `exit(1)` 并打印原因。前端在设置加载失败 / 渲染进入错误边界时传 `false`
+- [ ] 窗口控制（最小化 / 最大化切换 / 关闭 / 是否最大化 / 拖动）加入 bridge 的 `Transport`，mock 中为空操作
 - [ ] `app-layout.tsx`：§3 的骨架
 
 **验证**：`npm run check`；`npm run screenshots`。
@@ -369,6 +393,7 @@ CI 已在 P0b 建立，此阶段只做收尾。
 - [ ] `.github/workflows/release.yml`：推送 `v*` tag 时三平台 `tauri build`，产物附到 GitHub Release（草稿）
 - [ ] macOS 签名：CI 产物未签名，下载后可能被提示「已损坏」。至少配置 ad-hoc 签名（`bundle.macOS.signingIdentity: "-"`）；`macos-latest` 为 arm64，dmg 仅支持 Apple 芯片，是否加 x86_64 / universal 由用户决定
 - [ ] 若 Actions 缓存超过 10 GB 上限导致频繁冷编译：`setup-rust-toolchain` 加 `cache-save-if: ${{ github.ref == 'refs/heads/main' }}`
+- [ ] macOS 最低版本：Tailwind 4 需要 Safari 16.4+，即 macOS 13.3+。在 `tauri.conf.json` 设 `bundle.macOS.minimumSystemVersion: "13.3"`，README 注明（P5 审查）
 - [ ] README：安装、配置内核路径、上游限制（代理无密码验证、headless、GPU 仅 Linux）、构建方法、视觉参考致谢
 
 **验证**：

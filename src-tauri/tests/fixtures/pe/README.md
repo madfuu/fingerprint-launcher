@@ -4,10 +4,10 @@ Minimal Windows executables whose only content is a `VERSIONINFO` resource with
 `FILEVERSION 150,0,7871,186` (see `version.rc`). They test `src/kernel/probe/pe.rs` on every
 host; nothing ever runs them.
 
-| File | Format |
-|---|---|
+| File                  | Format                          |
+| --------------------- | ------------------------------- |
 | `versioninfo-x64.bin` | PE32+ (x86-64), as `chrome.exe` |
-| `versioninfo-x86.bin` | PE32 (i386) |
+| `versioninfo-x86.bin` | PE32 (i386)                     |
 
 Generated on Linux with mingw-w64 (GCC 14):
 

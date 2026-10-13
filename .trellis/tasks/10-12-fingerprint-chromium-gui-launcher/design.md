@@ -331,6 +331,8 @@ P4 落定（`src-tauri/src/shell.rs`，依据 tauri 2.12.3 / tao 0.37.1 源码�
 
 `bridge.ts` 与 Rust `commands/` 一一对应。错误统一为 `{ code: string; message: string }`（TS 类型 `AppError`），`code` 供前端选 i18n 文案，`message` 为原始细节。例外：参数反序列化失败（`InvalidArgs`）与 ACL 拒绝由 Tauri 自身以**纯字符串**拒绝（tauri 2.12 `ipc/mod.rs` `From<crate::Error> for InvokeError`），`bridge.ts` 须把非 `AppError` 的拒绝统一包装成 `AppError`（如 `invalid_input` + 原文），调用方只处理一种形状。
 
+**错误归一（P5 落定）**：每个 bridge 调用（命令、事件订阅、对话框、剪贴板）失败时都以 `BridgeError` 拒绝——它是 `Error` 子类（保留栈与 `cause`），同时满足 `AppError` 形状。`toAppError` 的映射：已知 `code` 的 `{ code, message }` 原样保留；未知 `code`（如更新的后端）→ `invalid_input`，`message` 为 `"<code>: <message>"`；字符串（Tauri 参数 / ACL / 未知命令、插件错误）→ `invalid_input` + 原文；`Error` 或只有 `message` 的对象 → `invalid_input` + 其 `message`；其他 → `invalid_input` + JSON / 字符串形式。`ErrorCode` 没有「内部错误」一类，`invalid_input` 的文案因此写作「输入或请求无效」。`ERROR_CODES` 以 `Record<ErrorCode, true>` 列全集，后端新增错误码时前端 typecheck 失败（i18n 的 `errors` 同理）。
+
 **类型来源（P4 落定）**：下列签名中的所有 DTO、枚举、事件载荷与 `AppError` 都由 Rust 定义经 ts-rs 生成到 `src/lib/bindings/`（`src-tauri/src/bindings.rs`，`cargo test` 时导出；`index.ts` 汇总再导出，`events.ts` 含事件名常量 `EVENTS` 与 `EventPayloads` 映射）。`bridge.ts` 只引用生成的类型，不手写 DTO；CI 校验生成结果与提交一致。命令参数名为 camelCase（Tauri 默认）。
 
 ```ts
@@ -408,32 +410,42 @@ P4 相对原契约的改动：`previewCommand` 第二参数由 `kernelId` 改为
 
 ```
 src/
-  main.tsx
+  main.tsx                       # 只调 bootstrap()
   index.css                      # 主题变量（§7）
   app/
-    app.tsx                      # Provider 栈 + 启动引导（读设置 → i18n/主题 → showMainWindow）
-    routes.tsx
+    bootstrap.tsx                # 启动引导：读设置 → i18n/主题 → 渲染 → showMainWindow
+    app.tsx                      # Provider 栈（主题、tooltip、路由、toaster）
+    routes.tsx  paths.ts         # 路由表与路径常量
+    fatal-error.tsx  error-boundary.tsx  ready-signal.tsx
+    brand.ts                     # 产品名（品牌，不翻译）
     layout/
-      app-layout.tsx  app-titlebar.tsx  app-sidebar.tsx  app-background.tsx
+      app-layout.tsx  app-titlebar.tsx  app-sidebar.tsx  app-background.tsx   # P5 只有 app-layout 占位
   components/
     ui/                          # shadcn CLI 生成（new-york, neutral）
     data-table/                  # 密集表格 + 骨架 + 粘性列
-    theme-provider.tsx
+    theme-provider.tsx  page-placeholder.tsx
   features/
     profiles/  profile-editor/  groups/  proxies/  settings/
       ├ api.ts        # 调 bridge
       ├ components/
       ├ hooks/
-      ├ store.ts      # zustand：筛选 / 多选 / 对话框
+      ├ store.ts      # zustand：筛选 / 多选 / 对话框（settings/store.ts 为全局设置）
       ├ types.ts
       └ i18n.ts       # 本 feature 的 zh-CN + en
+    profiles/running-store.ts    # 运行态 store
+  hooks/
+    use-resolved-theme.ts
   lib/
-    bridge.ts                    # ★ 唯一 invoke 收口
-    bridge.mock.ts               # 内存 mock，仅 dev 构建加载
+    bridge.ts                    # ★ 唯一原生调用收口：命令、事件、对话框、剪贴板、错误归一
+    bridge.tauri.ts              # Tauri 传输层：全项目唯一 import @tauri-apps/* 的文件
+    bridge.mock.ts  mock/        # 内存 mock，仅 dev 且非 Tauri 时经动态 import 加载
     bindings/                    # Rust 生成的 DTO / 事件类型（ts-rs，§5），勿手改
+    theme.ts                     # light / dark / system 解析与应用
     utils.ts                     # cn()
   i18n/
-    index.ts  registry.ts
+    index.ts  registry.ts  define.ts  common.ts  errors.ts  i18next.d.ts
+scripts/
+  screenshot.mjs                 # npm run screenshots（§10）
 ```
 
 | 路径 | 页面 |
@@ -447,10 +459,13 @@ src/
 - 路由：react-router 7 `BrowserRouter`
 - 表单：react-hook-form + zod（zod 只做格式校验；版本相关的校验以 Rust `validateProfileForKernel` 为准）
 - 文件/目录选择、保存对话框：`tauri-plugin-dialog`；复制命令行：`tauri-plugin-clipboard-manager`（WebKitGTK 下 `navigator.clipboard` 不可靠）
-- 状态：服务端数据用 `use*` hooks + 手动 `refresh()`；UI 状态用 zustand；运行态单独一个 zustand store，启动时 `listRunning()` 再订阅 `profile://status-changed` 增量更新
-- 通知：sonner
-- **bridge 运行模式**：检测 `window.__TAURI_INTERNALS__`；不存在且 `import.meta.env.DEV` 时加载 `bridge.mock.ts`（带种子数据，模拟启动/停止状态流转）。生产构建中 mock 被摇树移除。
-- **启动不闪烁**：窗口以 `visible(false)` 创建，前端读完设置、初始化 i18n 与主题后调 `showMainWindow()`。主题与语言存 `settings` 表，单一来源。兜底（P4）：窗口创建 5 s 后前端仍未调用，则 Rust 侧自行显示窗口，前端出错时也不会留下不可见的进程。环境变量 `FPL_SMOKE_EXIT_ON_READY=1` 时，`showMainWindow` 被调用即 `app.exit(0)`，供 CI 冒烟验证「WebView 加载前端 + 正式 CSP 下完成一次 IPC」。
+- 状态：服务端数据用 `use*` hooks + 手动 `refresh()`；UI 状态用 zustand；运行态单独一个 zustand store（P5 落定顺序）：**先订阅** `profile://status-changed`，**再取** `listRunning()` 快照；合并时，订阅后收到过事件的 profile 以事件为准，快照只补其余 profile。依据：后端每次状态变化都在同一把锁下发事件、顺序不乱，故某 profile 最后收到的事件总是最新状态；没有事件的 profile 自订阅起未变，快照对它是准的。`stopped` 删除条目；`error` 保留失败信息直到下次启动或 `dismissError`
+- 设置：`features/settings/store.ts`（zustand）持有启动时读到的 `Settings`；修改一律经 `update(patch)`——先持久化，再应用后端返回值（语言随之切换；主题由 `ThemeProvider` 跟随）
+- i18n：`common` 命名空间放通用文案（导航、动作、状态、错误码、失败提示、shadcn 组件的读屏文案）；每个 feature 的 `i18n.ts` 用 `defineMessages(zhCN, en)` 定义，类型保证 en 与 zh-CN 键完全一致；`i18next.d.ts` 让 `t()` 的键受类型检查。错误码文案 `errors.<code>` 与 `failureHints.<hint>` 用 `satisfies Record<…>` 覆盖生成的全部取值；`localizeError(t, error)` 给出「错误码文案 + 原始细节」
+- 通知：sonner（`components/ui/sonner.tsx` 改用本项目的 `useResolvedTheme`，不引入 next-themes）
+- **bridge 运行模式**：检测 `window.__TAURI_INTERNALS__`；不存在且 `import.meta.env.DEV` 时经动态 `import()` 加载 `bridge.mock.ts`（带种子数据，模拟启动/停止状态流转）。`import.meta.env.DEV` 是构建期常量，生产构建连同 mock chunk 一起删除（P5 已对 `dist/` 检索验证）。ESLint `no-restricted-imports`：`@tauri-apps/*` 只能在 `bridge.tauri.ts` 中 import；mock 模块（`bridge.mock`、`lib/mock/*`）除自身与测试外任何文件不得静态 import
+- **mock**：内存实现，语义贴近 Rust（`ProfileQuery` 分页筛选与排序、§3.2 门控、§3.3 参数顺序、启动状态事件与失败提示、批量并发上限；draft 按 serde 读取——多余字段忽略、缺失字段取默认；批量改分组 / 标签全有或全无，错误码与 SQLite 约束一致）。拒绝值与 Tauri 一样是纯 `{ code, message }` 对象，因此 bridge 的错误归一在 mock 下同样生效。命令名与参数键另由 `bridge.contract.test.ts` 对照 Rust 源码校验（mock 的命令表只受 TS 类型约束，发现不了与 Rust 的偏差）。URL 覆盖（仅 mock）：`?theme=light|dark|system`、`?lang=zh-CN|en`、`?os=linux|windows|macos`（P6 截 macOS 标题栏用）。mock 把自身挂在 `window.__FPL_MOCK__`（`emit(event, payload)`、`backend`），供截图脚本触发事件（如 P10 的退出确认框）
+- **启动不闪烁**：窗口以 `visible(false)` 创建，前端读完设置、初始化 i18n 与主题后调 `showMainWindow()`。设置读取失败时改为渲染错误页（错误码文案 + 原始细节 + 重新加载），渲染期异常由 `AppErrorBoundary` 接住同样显示错误页；无论哪种情况 `showMainWindow()` 都会被调用（`finally`），首帧提交后调用、最多等 3 s。调用后在 `<html>` 上置 `data-app-ready="true"`，截图脚本以此为就绪信号。主题与语言存 `settings` 表，单一来源。兜底（P4）：窗口创建 5 s 后前端仍未调用，则 Rust 侧自行显示窗口，前端出错时也不会留下不可见的进程。环境变量 `FPL_SMOKE_EXIT_ON_READY=1` 时，`showMainWindow` 被调用即 `app.exit(0)`，供 CI 冒烟验证「WebView 加载前端 + 正式 CSP 下完成一次 IPC」。
 - **DTO 类型**：只从 `src/lib/bindings`（Rust 生成，见 §5）导入，不手写。
 
 ## 7. 外观复刻（R8）
@@ -491,9 +506,11 @@ src/
 - Rust：stable 1.99（rustup 经 USTC 镜像安装）；crates 经 `~/.cargo/config.toml` 的 USTC sparse 镜像拉取（本机连不上 crates.io 官方源）
 - 应用标识：productName `Fingerprint Launcher`，identifier `io.github.madfuu.fingerprint-launcher`（首次发布前可改；发布后改会导致数据目录迁移）
 - 检查：`npm run lint`（含 `eslint-plugin-i18next` 的 `no-literal-string`，`jsx-only` 模式，属性白名单排除 `className` / `variant` / `size` / `data-*` 等非文案属性，让 A10「无硬编码文案」可机检）、`npm run typecheck`、`cargo fmt --check`、`cargo clippy -D warnings`、`cargo test`、`vitest run`
-- CI：GitHub Actions（公开仓库 `madfuu/fingerprint-launcher`），矩阵 `ubuntu-22.04` / `windows-latest` / `macos-latest`，原生跑 clippy + test，再 `tauri build` 打包并上传产物；Linux 额外做 xvfb 冒烟。**CI 是权威结果**；本机只跑开发循环（typecheck / lint / vitest / Linux 上的 cargo 检查与测试），不做打包、冒烟和 Windows 交叉检查（用户决定）
+- CI：GitHub Actions（公开仓库 `madfuu/fingerprint-launcher`），矩阵 `ubuntu-22.04` / `windows-latest` / `macos-latest`，原生跑 clippy + test，再 `tauri build` 打包并上传产物；Linux 额外做 xvfb 冒烟（P5 起：设 `FPL_SMOKE_EXIT_ON_READY=1`，`timeout 60` 内必须以 0 退出，即前端在正式 CSP 下加载并完成 `showMainWindow` IPC；124 = 超时未就绪，其他非 0 = 崩溃，均以 `::error::` 报出）。**CI 是权威结果**；本机只跑开发循环（typecheck / lint / vitest / Linux 上的 cargo 检查与测试），不做打包、冒烟和 Windows 交叉检查（用户决定）
 - `tauri::generate_context!()` 编译期要求 `frontendDist` 存在：任何 `cargo clippy` / `cargo test` 之前先 `npm run build`
 - 桥接类型（P4）：ts-rs 12（仅 dev-dependency；类型以 `#[cfg_attr(test, derive(ts_rs::TS))]` 派生，发布构建不含）。`cargo test` 写出 `src/lib/bindings/`（只改内容有变的文件、删除过期文件），整数统一映射为 `number`；该目录不经 Prettier（`.prettierignore`），但参与 `tsc` 与 ESLint。CI 的 ubuntu `check` 在 `cargo test` 之后检查该目录无改动（含新增文件）
+- 前端其他 P5 依赖：`cmdk`（shadcn `command`）；dev：`playwright-core`（不下载浏览器，只驱动本机 Chrome for Testing）。shadcn 生成的 `sonner` 依赖 `next-themes`，已改用本项目主题 hook 并移除该依赖
+- 截图（P5）：`npm run screenshots [-- --route a,b --theme light|dark --lang zh-CN|en]`。脚本在**本进程内**启动 Vite（mock bridge），端口由系统分配的随机空闲端口（排除 5173），以 `FPL_SCREENSHOT_CHROME`（默认 `~/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`）在 1438×828 截图到 `.screenshots/<route>-<theme>-<lang>.png`；成功、失败、Ctrl+C 都会关闭浏览器与服务器。页面报错（`pageerror` / console error）使退出码为 1
 - Rust 侧其他 P4 依赖：`tauri-plugin-dialog`、`tauri-plugin-clipboard-manager`；`reqwest` 0.13（`default-features = false`，`rustls-no-provider` + `socks`）+ `rustls`（`ring`）
 
 ## 9. 许可

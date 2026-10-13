@@ -1,16 +1,10 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-
-import { App } from '@/app/app';
 import '@/index.css';
 
-const root = document.getElementById('root');
-if (!root) {
+import { bootstrap } from '@/app/bootstrap';
+
+const container = document.getElementById('root');
+if (!container) {
   throw new Error('#root element is missing from index.html');
 }
 
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-);
+void bootstrap(container);

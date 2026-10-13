@@ -1,15 +1,20 @@
-/** Product name is a brand, not translatable copy. */
-const APP_NAME = 'Fingerprint Launcher';
+import { BrowserRouter } from 'react-router';
 
-/**
- * P0 placeholder. P5 replaces this with the provider stack, bootstrap
- * (settings → i18n / theme → showMainWindow) and the router.
- */
+import { AppRoutes } from '@/app/routes';
+import { ThemeProvider } from '@/components/theme-provider';
+import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
+
+/** Provider stack and router; rendered by the bootstrap once settings, i18n and theme are set. */
 export function App() {
   return (
-    <main className="flex h-screen w-full flex-col items-center justify-center gap-3 bg-background text-foreground">
-      <img src="/logo.svg" alt={APP_NAME} className="size-14" />
-      <h1 className="text-sm font-semibold tracking-tight">{APP_NAME}</h1>
-    </main>
+    <ThemeProvider>
+      <TooltipProvider delayDuration={300}>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+        <Toaster />
+      </TooltipProvider>
+    </ThemeProvider>
   );
 }
