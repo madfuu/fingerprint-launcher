@@ -1,8 +1,9 @@
 /**
- * Every i18n namespace (design §6): `common` plus one per feature. A feature adds its catalog
- * here; `index.ts` builds the i18next resources from this table and `i18next.d.ts` types `t()`
- * keys from the zh-CN catalogs.
+ * Every i18n namespace (design §6): `common`, the app frame (`layout`) and one per feature. A
+ * feature adds its catalog here; `index.ts` builds the i18next resources from this table and
+ * `i18next.d.ts` types `t()` keys from the zh-CN catalogs.
  */
+import { layoutMessages } from '@/app/layout/i18n';
 import { groupsMessages } from '@/features/groups/i18n';
 import { profileEditorMessages } from '@/features/profile-editor/i18n';
 import { profilesMessages } from '@/features/profiles/i18n';
@@ -14,6 +15,7 @@ import { common } from './common';
 
 export const registry = {
   common,
+  layout: layoutMessages,
   profiles: profilesMessages,
   profileEditor: profileEditorMessages,
   groups: groupsMessages,

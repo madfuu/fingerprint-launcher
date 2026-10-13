@@ -9,6 +9,7 @@ import tseslint from 'typescript-eslint';
 
 const TAURI_TRANSPORT = 'src/lib/bridge.tauri.ts';
 const BRIDGE_INTERNALS = ['src/lib/bridge.ts', 'src/lib/bridge.mock.ts', 'src/lib/mock/**'];
+const DEV_ONLY = 'src/dev/**';
 const NO_TAURI = {
   regex: '^@tauri-apps/',
   message: 'Native calls go through @/lib/bridge (design decision 4).',
@@ -17,6 +18,11 @@ const NO_MOCK = {
   // `@/lib/bridge.mock`, `./bridge.mock`, `@/lib/mock/...`, `./mock/...`, `../mock/...`
   regex: '(^|/)bridge\\.mock$|(^|/)lib/mock(/|$)|^(\\.\\.?/)+mock(/|$)',
   message: 'The mock backend is dev-only; only bridge.ts loads it (dynamic import).',
+};
+const NO_DEV = {
+  // `@/dev/...`, `./dev/...`, `../dev/...`
+  regex: '(^|/)@/dev(/|$)|^(\\.\\.?/)+dev(/|$)',
+  message: 'src/dev is for the Playwright scripts only; the app must not import it.',
 };
 
 export default defineConfig([
@@ -80,21 +86,28 @@ export default defineConfig([
   // production bundle through a static import.
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: [...BRIDGE_INTERNALS, TAURI_TRANSPORT, '**/*.test.*'],
+    ignores: [...BRIDGE_INTERNALS, TAURI_TRANSPORT, DEV_ONLY, '**/*.test.*'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [NO_TAURI, NO_MOCK] }],
+      'no-restricted-imports': ['error', { patterns: [NO_TAURI, NO_MOCK, NO_DEV] }],
     },
   },
   {
     files: [...BRIDGE_INTERNALS, '**/*.test.*'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [NO_TAURI] }],
+      'no-restricted-imports': ['error', { patterns: [NO_TAURI, NO_DEV] }],
     },
   },
   {
     files: [TAURI_TRANSPORT],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [NO_MOCK] }],
+      'no-restricted-imports': ['error', { patterns: [NO_MOCK, NO_DEV] }],
+    },
+  },
+  {
+    // Loaded by the Playwright scripts through the dev server, never by the app.
+    files: [DEV_ONLY],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [NO_TAURI, NO_MOCK] }],
     },
   },
   {

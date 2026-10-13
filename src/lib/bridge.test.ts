@@ -3,16 +3,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EventPayloads, StatusEvent } from '@/lib/bindings';
 import {
   BridgeError,
+  closeWindow,
   FOREIGN_ERROR_CODE,
   getArgSupport,
   isErrorCode,
+  isWindowMaximized,
   launchProfile,
   listProfiles,
+  minimizeWindow,
   onProfileStatusChanged,
+  onWindowResized,
   openFileDialog,
   previewCommand,
   setTransport,
   toAppError,
+  toggleMaximizeWindow,
   type Transport,
 } from '@/lib/bridge';
 import { EMPTY_DRAFT } from '@/lib/mock/seed';
@@ -33,6 +38,15 @@ function fakeTransport(invoke: (command: string, args: unknown) => Promise<unkno
     }),
     saveFile: vi.fn(async () => null),
     writeClipboard: vi.fn(async () => {}),
+    appWindow: {
+      minimize: vi.fn(async () => {
+        throw 'window.minimize not allowed. Permissions associated with this command: core:window:allow-minimize';
+      }),
+      toggleMaximize: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+      isMaximized: vi.fn(async () => true),
+      onResized: vi.fn(async () => unlisten),
+    },
   };
   const fire = <E extends keyof EventPayloads>(event: E, payload: EventPayloads[E]) =>
     handlers.get(event)?.(payload);
@@ -156,5 +170,23 @@ describe('events and native helpers', () => {
       code: 'invalid_input',
       message: expect.stringContaining('dialog:allow-open'),
     });
+  });
+
+  it('route window controls to the transport and normalize their rejections', async () => {
+    const { transport, unlisten } = fakeTransport(async () => null);
+    setTransport(transport);
+    await expect(minimizeWindow()).rejects.toMatchObject({
+      name: 'BridgeError',
+      code: 'invalid_input',
+      message: expect.stringContaining('core:window:allow-minimize'),
+    });
+    await expect(isWindowMaximized()).resolves.toBe(true);
+    await toggleMaximizeWindow();
+    await closeWindow();
+    expect(transport.appWindow.toggleMaximize).toHaveBeenCalledOnce();
+    expect(transport.appWindow.close).toHaveBeenCalledOnce();
+    const handler = vi.fn();
+    await expect(onWindowResized(handler)).resolves.toBe(unlisten);
+    expect(transport.appWindow.onResized).toHaveBeenCalledWith(handler);
   });
 });

@@ -1,7 +1,7 @@
 /**
  * The frontend's only way to native code (design decision 4): every Tauri command, event,
- * file dialog and clipboard write goes through this module. ESLint forbids `@tauri-apps/*`
- * imports everywhere except the Tauri transport (`bridge.tauri.ts`).
+ * file dialog, clipboard write and window control goes through this module. ESLint forbids
+ * `@tauri-apps/*` imports everywhere except the Tauri transport (`bridge.tauri.ts`).
  *
  * - All DTOs come from `@/lib/bindings`, generated from the Rust types (design §5).
  * - Every failure rejects with a {@link BridgeError}, which is an `AppError`
@@ -106,7 +106,7 @@ export interface Commands {
   get_settings: Command<NoArgs, Settings>;
   update_settings: Command<{ patch: SettingsPatch }, Settings>;
   get_app_info: Command<NoArgs, AppInfo>;
-  show_main_window: Command<NoArgs, null>;
+  show_main_window: Command<{ bootOk: boolean; failure: string | null }, null>;
   quit_app: Command<NoArgs, null>;
 }
 
@@ -138,6 +138,21 @@ export interface SaveFileOptions {
 }
 
 /**
+ * The window's own controls, for the custom title bar (the window has no native decorations
+ * except on macOS). Dragging is not here: Tauri's injected script handles elements marked
+ * `data-tauri-drag-region`.
+ */
+export interface WindowControls {
+  minimize(): Promise<void>;
+  toggleMaximize(): Promise<void>;
+  /** Asks to close; the backend may intercept it (`app://close-requested`, design §4.5). */
+  close(): Promise<void>;
+  isMaximized(): Promise<boolean>;
+  /** Fires on every size change, maximizing and restoring included. */
+  onResized(handler: () => void): Promise<Unlisten>;
+}
+
+/**
  * What a backend provides: the real one over Tauri IPC, or the in-memory mock. Rejections may
  * have any shape; {@link call} normalizes them.
  */
@@ -153,6 +168,7 @@ export interface Transport {
   /** `null` when cancelled. */
   saveFile(options: SaveFileOptions): Promise<string | null>;
   writeClipboard(text: string): Promise<void>;
+  appWindow: WindowControls;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -534,9 +550,13 @@ export function getAppInfo(): Promise<AppInfo> {
   return call('get_app_info', none);
 }
 
-/** Shows the window created hidden; call once settings, i18n and theme are applied. */
-export async function showMainWindow(): Promise<void> {
-  await call('show_main_window', none);
+/**
+ * Shows the window created hidden, once the first frame is rendered. `bootOk` is false when
+ * that frame is the error screen; `failure` then says why (printed by the backend; a
+ * `FPL_SMOKE_EXIT_ON_READY` run exits 1 on it).
+ */
+export async function showMainWindow(bootOk: boolean, failure: string | null): Promise<void> {
+  await call('show_main_window', { bootOk, failure });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -580,4 +600,30 @@ export function saveFileDialog(options: SaveFileOptions = {}): Promise<string | 
 /** Through the clipboard plugin: `navigator.clipboard` is unreliable in WebKitGTK. */
 export function copyToClipboard(text: string): Promise<void> {
   return native((backend) => backend.writeClipboard(text));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Window controls (custom title bar)
+// ---------------------------------------------------------------------------------------------
+
+export function minimizeWindow(): Promise<void> {
+  return native((backend) => backend.appWindow.minimize());
+}
+
+export function toggleMaximizeWindow(): Promise<void> {
+  return native((backend) => backend.appWindow.toggleMaximize());
+}
+
+/** Same as the window manager's close: with browsers running, the backend asks first. */
+export function closeWindow(): Promise<void> {
+  return native((backend) => backend.appWindow.close());
+}
+
+export function isWindowMaximized(): Promise<boolean> {
+  return native((backend) => backend.appWindow.isMaximized());
+}
+
+/** Resolves with the function that unsubscribes. */
+export function onWindowResized(handler: () => void): Promise<Unlisten> {
+  return native((backend) => backend.appWindow.onResized(handler));
 }

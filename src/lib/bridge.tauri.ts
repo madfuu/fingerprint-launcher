@@ -4,6 +4,7 @@
  */
 import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { open, save } from '@tauri-apps/plugin-dialog';
 
@@ -31,5 +32,15 @@ export const tauriTransport: Transport = {
 
   writeClipboard(text) {
     return writeText(text);
+  },
+
+  // Permissions: `core:window:allow-{minimize,toggle-maximize,close,is-maximized}` and
+  // `core:event:allow-listen` (resize events) in capabilities/default.json.
+  appWindow: {
+    minimize: () => getCurrentWindow().minimize(),
+    toggleMaximize: () => getCurrentWindow().toggleMaximize(),
+    close: () => getCurrentWindow().close(),
+    isMaximized: () => getCurrentWindow().isMaximized(),
+    onResized: (handler) => getCurrentWindow().onResized(() => handler()),
   },
 };

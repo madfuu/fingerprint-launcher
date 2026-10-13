@@ -13,7 +13,11 @@
  * production bundles contain none of this.
  *
  * URL overrides (screenshots): `?theme=light|dark|system`, `?lang=zh-CN|en`,
- * `?os=linux|windows|macos`.
+ * `?os=linux|windows|macos`, `?sidebar=collapsed|expanded`.
+ *
+ * Window controls do nothing to the browser window; they are recorded in
+ * `MockBackend.windowCalls`, and closing with browsers running emits `app://close-requested`
+ * like the Rust shell does.
  */
 import type {
   AppError,
@@ -53,6 +57,7 @@ import type {
   SaveFileOptions,
   Transport,
   Unlisten,
+  WindowControls,
 } from '@/lib/bridge';
 import {
   argSupportFor,
@@ -100,7 +105,7 @@ export const DEFAULT_TIMING: MockTiming = {
 };
 
 export interface MockOptions {
-  /** `location.search`, for the `theme` / `lang` / `os` overrides. */
+  /** `location.search`, for the `theme` / `lang` / `os` / `sidebar` overrides. */
   search?: string;
   timing?: Partial<MockTiming>;
 }
@@ -118,6 +123,16 @@ const SPOOFING_FEATURES: SpoofingFeature[] = ['font', 'audio', 'canvas', 'client
 const THEMES: Theme[] = ['light', 'dark', 'system'];
 const LOCALES: Locale[] = ['zh-CN', 'en'];
 const HOST_OSES: HostOs[] = ['linux', 'windows', 'macos'];
+const SIDEBAR_STATES = ['collapsed', 'expanded'] as const;
+
+/** A window control the UI used, in `MockBackend.windowCalls`. */
+export type WindowCall = 'minimize' | 'toggleMaximize' | 'close';
+
+/** What the frontend reported through `showMainWindow`. */
+export interface BootReport {
+  bootOk: boolean;
+  failure: string | null;
+}
 
 function pick<T extends string>(value: string | null, allowed: readonly T[]): T | undefined {
   return allowed.find((candidate) => candidate === value);
@@ -279,6 +294,12 @@ export class MockBackend {
   readonly profiles = new Map<string, Profile>();
   /** Last value written by `copyToClipboard`. */
   clipboard: string | null = null;
+  /** Every window control used, in order. */
+  readonly windowCalls: WindowCall[] = [];
+  /** Last `showMainWindow` call; `null` before the frontend called it. */
+  bootReport: BootReport | null = null;
+  private maximized = false;
+  private readonly resizeListeners = new Set<() => void>();
 
   private readonly failures: Record<string, MockFailure>;
   private readonly proxyChecks: Record<string, ProxyCheck | null>;
@@ -297,7 +318,7 @@ export class MockBackend {
       theme: pick(params.get('theme'), THEMES) ?? 'system',
       batchConcurrency: 3,
       batchIntervalMs: 800,
-      sidebarCollapsed: true,
+      sidebarCollapsed: pick(params.get('sidebar'), SIDEBAR_STATES) !== 'expanded',
     };
     this.appInfo = appInfoFor(pick(params.get('os'), HOST_OSES) ?? 'linux');
 
@@ -1238,7 +1259,13 @@ export class MockBackend {
     get_settings: () => this.settings,
     update_settings: ({ patch }) => this.updateSettings(patch),
     get_app_info: () => this.appInfo,
-    show_main_window: () => null,
+    show_main_window: ({ bootOk, failure }) => {
+      this.bootReport = { bootOk, failure };
+      if (!bootOk) {
+        console.warn(`[mock] showMainWindow: the frontend reported a failed boot: ${failure}`);
+      }
+      return null;
+    },
     quit_app: async () => {
       await this.shutdown();
       console.info('[mock] quitApp: every browser stopped; the app would exit now');
@@ -1264,6 +1291,38 @@ export class MockBackend {
     const name = options.defaultPath?.split(/[\\/]/).pop() || 'profiles.json';
     return `/home/user/Downloads/${name}`;
   }
+
+  // ------------------------------------------------------------------------------------------
+  // Window controls
+  // ------------------------------------------------------------------------------------------
+
+  readonly appWindow: WindowControls = {
+    minimize: async () => {
+      this.windowCalls.push('minimize');
+    },
+    toggleMaximize: async () => {
+      this.windowCalls.push('toggleMaximize');
+      this.maximized = !this.maximized;
+      for (const listener of [...this.resizeListeners]) {
+        queueMicrotask(listener);
+      }
+    },
+    close: async () => {
+      this.windowCalls.push('close');
+      // Like `shell::on_window_event`: with browsers running (or starting), ask first.
+      if (this.table.size > 0) {
+        this.emit('app://close-requested', { runningCount: this.table.size });
+      } else {
+        console.info('[mock] close: nothing is running; the app would exit now');
+      }
+    },
+    isMaximized: async () => this.maximized,
+    onResized: async (handler) => {
+      const listener = () => handler();
+      this.resizeListeners.add(listener);
+      return () => this.resizeListeners.delete(listener);
+    },
+  };
 }
 
 /** The mock as a bridge transport. */
@@ -1284,6 +1343,7 @@ export function createMockTransport(options: MockOptions = {}): Transport & {
       backend.clipboard = text;
       await navigator.clipboard?.writeText(text).catch(() => undefined);
     },
+    appWindow: backend.appWindow,
   };
   if (typeof window !== 'undefined') {
     const controls: MockControls = {

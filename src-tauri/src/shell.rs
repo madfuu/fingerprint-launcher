@@ -34,10 +34,21 @@ pub const MAIN_WINDOW_LABEL: &str = "main";
 /// broken frontend must not leave an invisible app behind.
 pub const SHOW_FALLBACK: Duration = Duration::from_secs(5);
 
-/// Set to `1`, the app exits with code 0 as soon as the frontend calls `showMainWindow`. CI's
-/// smoke test uses it to prove the WebView loaded the frontend and completed an IPC round trip
-/// under the production CSP.
+/// Set to `1`, the app exits as soon as the frontend calls `showMainWindow`: with code 0 when
+/// it reports a successful boot, 1 when it reports a failure (the reason goes to stderr). CI's
+/// smoke test uses it to prove the WebView loaded the frontend, completed an IPC round trip
+/// under the production CSP, and rendered the app rather than its error screen.
 pub const SMOKE_EXIT_ON_READY_ENV: &str = "FPL_SMOKE_EXIT_ON_READY";
+
+/// Exit code of a smoke run that ended without the frontend ever calling `showMainWindow`: the
+/// event loop exits with code 0 once the last window is destroyed, which would otherwise read
+/// as a passing smoke test (see `on_run_event`).
+const SMOKE_NOT_READY_EXIT: i32 = 3;
+
+/// Where the macOS traffic lights sit in our 48 px title bar: vertically centred, with the
+/// brand slot starting after them (the frontend reserves 78 px on macOS).
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_POSITION: tauri::LogicalPosition<f64> = tauri::LogicalPosition::new(18.0, 18.0);
 
 /// Window and exit flags.
 #[derive(Debug, Default)]
@@ -80,7 +91,8 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true);
+        .hidden_title(true)
+        .traffic_light_position(TRAFFIC_LIGHT_POSITION);
     #[cfg(not(target_os = "macos"))]
     let builder = builder.decorations(false);
 
@@ -94,14 +106,21 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// `showMainWindow`: the frontend is ready.
-pub fn frontend_ready(app: &AppHandle) {
+/// `showMainWindow`: the frontend has rendered, either the app (`boot_ok`) or its error screen
+/// (`failure` says why). The window is shown either way.
+pub fn frontend_ready(app: &AppHandle, boot_ok: bool, failure: Option<&str>) {
+    if !boot_ok {
+        eprintln!(
+            "frontend startup failed: {}",
+            failure.unwrap_or("no reason given")
+        );
+    }
     let shell = app.state::<ShellState>();
     shell.frontend_ready.store(true, Ordering::SeqCst);
     show(app);
     if shell.smoke_exit_on_ready {
         shell.exiting.store(true, Ordering::SeqCst);
-        app.exit(0);
+        app.exit(if boot_ok { 0 } else { 1 });
     }
 }
 
@@ -174,6 +193,14 @@ pub fn on_run_event(app: &AppHandle, event: RunEvent) {
         if let Some(state) = app.try_state::<AppState>() {
             let launcher = state.launcher.clone();
             tauri::async_runtime::block_on(launcher.shutdown());
+        }
+        let shell = app.state::<ShellState>();
+        if shell.smoke_exit_on_ready && !shell.frontend_ready.load(Ordering::SeqCst) {
+            // Destroying the last window exits the event loop with code 0 (a crashed WebView,
+            // a close we did not intercept). A smoke run may only succeed through
+            // `frontend_ready`, so leave a distinguishable code behind instead.
+            eprintln!("the app exited before the frontend called showMainWindow");
+            std::process::exit(SMOKE_NOT_READY_EXIT);
         }
     }
 }

@@ -18,7 +18,8 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "tauri": "tauri",
-    "screenshots": "node scripts/screenshot.mjs"
+    "screenshots": "node scripts/screenshot.mjs",
+    "ui-check": "node scripts/ui-check.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

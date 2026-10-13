@@ -90,6 +90,13 @@ function recordingTransport(calls: Map<string, string[]>): Transport {
     openFile: async () => null,
     saveFile: async () => null,
     writeClipboard: async () => {},
+    appWindow: {
+      minimize: async () => {},
+      toggleMaximize: async () => {},
+      close: async () => {},
+      isMaximized: async () => false,
+      onResized: async () => () => {},
+    },
   };
 }
 
@@ -143,7 +150,7 @@ const WRAPPERS: (() => Promise<unknown>)[] = [
   () => bridge.getSettings(),
   () => bridge.updateSettings({} as SettingsPatch),
   () => bridge.getAppInfo(),
-  () => bridge.showMainWindow(),
+  () => bridge.showMainWindow(true, null),
 ];
 
 afterEach(() => {
@@ -155,7 +162,8 @@ describe('bridge ↔ Rust command contract', () => {
     const rust = rustCommands();
     expect(rust.size).toBeGreaterThanOrEqual(46);
     expect(rust.get('purge_profile')).toEqual(['dropUserData', 'id']);
-    expect(rust.get('show_main_window')).toEqual([]);
+    expect(rust.get('show_main_window')).toEqual(['bootOk', 'failure']);
+    expect(rust.get('get_settings')).toEqual([]);
   });
 
   it('invokes every registered command by name with exactly its camelCase arguments', async () => {

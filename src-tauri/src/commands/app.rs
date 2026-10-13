@@ -69,11 +69,16 @@ pub async fn get_app_info(app: AppHandle, state: State<'_, AppState>) -> AppResu
     })
 }
 
-/// Called by the frontend once settings, i18n and theme are applied: shows the window that was
-/// created hidden.
+/// Called by the frontend once it has rendered: shows the window that was created hidden.
+/// `boot_ok` is false when it rendered its error screen instead of the app (settings could not
+/// be read, rendering threw, ...); `failure` then says why. See `shell::frontend_ready`.
 #[tauri::command]
-pub async fn show_main_window(app: AppHandle) -> AppResult<()> {
-    shell::frontend_ready(&app);
+pub async fn show_main_window(
+    app: AppHandle,
+    boot_ok: bool,
+    failure: Option<String>,
+) -> AppResult<()> {
+    shell::frontend_ready(&app, boot_ok, failure.as_deref());
     Ok(())
 }
 

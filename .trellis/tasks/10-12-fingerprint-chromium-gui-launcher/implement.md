@@ -38,7 +38,7 @@ npm run check     # = typecheck + lint + test(vitest) + build(vite)
 
 本机实测（2026-10-12）：8 vCPU / 15 GiB；Tauri 依赖树冷编译 2 min、增量 1 s；每个 target 目录约 3 GB。
 
-**截图验证**（P6 起）：`npm run screenshots` 产出 `.screenshots/<route>-<theme>-<lang>.png`，由主会话读图对照 `research/simprint-ui-reference.md` 核对。截图留在本机做，因为 Actions 的产物需要鉴权才能下载，本机没有 GitHub API 令牌。
+**截图验证**（P6 起）：`npm run screenshots` 产出 `.screenshots/<route>-<variant>-<theme>-<lang>.png`（变体：`collapsed` / `expanded` / `macos` / `dialog`），由主会话读图对照 `research/simprint-ui-reference.md` 核对；`npm run ui-check` 跑截图看不出的交互断言。两者留在本机做，因为 Actions 的产物需要鉴权才能下载，本机没有 GitHub API 令牌。
 
 **推送与 CI**：
 
@@ -299,17 +299,52 @@ FPL_TEST_CHROME=$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome c
 
 依据 `research/simprint-ui-reference.md` §2–§6，**自行实现**：
 
-- [ ] `app-background.tsx`：双层 canvas（网格 / 点阵 / 噪点 + 模糊光晕），按 DPR 缩放，主题切换重绘，resize debounce 150 ms
-- [ ] `app-titlebar.tsx`：四槽位；品牌（logo + 名称）、面包屑、状态区（主题切换、语言切换）、窗口控制（拖拽把手 + 三按钮，关闭 hover 为 destructive）；macOS 隐藏窗口控制、品牌区左留白。最大化 / 还原图标随窗口状态切换，需要在 capabilities 中加 `core:window:allow-is-maximized`（P4 审查）
-- [ ] 对话框打开时标题栏仍可用（P5 审查）：遮罩已从 48px 起（`index.css`），但 Radix 模态对话框会给 `body` 设 `pointer-events: none`（`@radix-ui/react-dismissable-layer`），并在外部 pointerdown 时关闭 Dialog。标题栏根元素须显式 `pointer-events-auto`，拖动 / 最小化 / 关闭才可用；并决定点标题栏是否应关闭已打开的 Dialog（必要时在 `onPointerDownOutside` 中对标题栏区域 `preventDefault`）。截图核对外再用 Playwright 在 mock 下点一次验证
-- [ ] `app-sidebar.tsx`：`w-16 ↔ w-58`、毛玻璃、渐变 CTA「新建配置」、导航项（激活竖条、tooltip、分组标题）、折叠按钮动画；折叠状态存 `settings.sidebar_collapsed`
-- [ ] **冒烟判定收紧**（P5 审查，主会话决定）：`showMainWindow` 增加参数 `bootOk: boolean`（Rust 命令 + bindings 重新生成 + bridge + mock）。正常运行时无论真假都显示窗口；`FPL_SMOKE_EXIT_ON_READY=1` 时 `bootOk` 为真才 `exit(0)`，为假则 `exit(1)` 并打印原因。前端在设置加载失败 / 渲染进入错误边界时传 `false`
-- [ ] 窗口控制（最小化 / 最大化切换 / 关闭 / 是否最大化 / 拖动）加入 bridge 的 `Transport`，mock 中为空操作
-- [ ] `app-layout.tsx`：§3 的骨架
+- [x] `app-background.tsx`：双层 canvas（网格 / 点阵 / 噪点 + 模糊光晕），按 DPR 缩放，主题切换重绘，resize debounce 150 ms
+- [x] `app-titlebar.tsx`：四槽位；品牌（logo + 名称）、面包屑、状态区（主题切换、语言切换）、窗口控制（拖拽把手 + 三按钮，关闭 hover 为 destructive）；macOS 隐藏窗口控制、品牌区左留白。最大化 / 还原图标随窗口状态切换，需要在 capabilities 中加 `core:window:allow-is-maximized`（P4 审查）
+- [x] 对话框打开时标题栏仍可用（P5 审查）：遮罩已从 48px 起（`index.css`），但 Radix 模态对话框会给 `body` 设 `pointer-events: none`（`@radix-ui/react-dismissable-layer`），并在外部 pointerdown 时关闭 Dialog。标题栏根元素须显式 `pointer-events-auto`，拖动 / 最小化 / 关闭才可用；并决定点标题栏是否应关闭已打开的 Dialog（必要时在 `onPointerDownOutside` 中对标题栏区域 `preventDefault`）。截图核对外再用 Playwright 在 mock 下点一次验证
+- [x] `app-sidebar.tsx`：`w-16 ↔ w-58`、毛玻璃、渐变 CTA「新建配置」、导航项（激活竖条、tooltip、分组标题）、折叠按钮动画；折叠状态存 `settings.sidebar_collapsed`
+- [x] **冒烟判定收紧**（P5 审查，主会话决定）：`showMainWindow` 增加参数 `bootOk: boolean`（Rust 命令 + bindings 重新生成 + bridge + mock）。正常运行时无论真假都显示窗口；`FPL_SMOKE_EXIT_ON_READY=1` 时 `bootOk` 为真才 `exit(0)`，为假则 `exit(1)` 并打印原因。前端在设置加载失败 / 渲染进入错误边界时传 `false`
+- [x] 窗口控制（最小化 / 最大化切换 / 关闭 / 是否最大化 / 拖动）加入 bridge 的 `Transport`，mock 中为空操作
+- [x] `app-layout.tsx`：§3 的骨架
 
 **验证**：`npm run check`；`npm run screenshots`。
 
 **审查关卡**：主会话读截图——侧栏折叠 / 展开 × 浅色 / 深色，与参考文档逐项核对（尺寸、激活态、CTA 渐变、背景网格与光晕、标题栏分隔线）。
+
+结果（实现 agent，2026-10-13）：`npm run check` 全绿（typecheck、lint 零告警、vitest 7 个文件 58 个测试、vite build）；`cargo fmt --check`、`RUSTFLAGS=-D warnings cargo clippy --all-targets -D warnings`、`cargo test`（149 单元 + 17 假内核）全绿，`src/lib/bindings` 无改动（新参数都是原始类型，不产生新 DTO）；`npx prettier --check .` 通过。`npm run screenshots` 产出 31 张（6 路由 × 折叠 + 配置列表的展开 / macOS / 对话框变体，浅深 × 中英）；`npm run ui-check` 18 项全过。
+
+实现要点与偏差：
+
+- 文件：`app/layout/{app-layout,app-titlebar,app-sidebar,app-background}.tsx` + `background-paint.ts`（两层画法的纯函数）、`nav.ts`（侧栏导航表 + 面包屑路由表）、`i18n.ts`（`layout` 命名空间）；`app/app-info.ts`（`getAppInfo` store，宿主 OS）、`app/boot-status.ts`（启动失败原因汇总）；`hooks/use-window-maximized.ts`、`lib/titlebar.ts`
+- 标题栏整条是 `data-tauri-drag-region="deep"`（Tauri 2.12 的 drag 脚本会跳过 button / a 等可点元素），因此不必逐块标注拖动区；双击最大化走 `internal_toggle_maximize`
+- 点标题栏**不关闭**对话框：`DialogContent` 的 `onInteractOutside` 对 `[data-app-titlebar]` 内的交互 `preventDefault`（拖窗口不是对对话框的回答）；点其他地方照常关闭。两条都在 `ui-check` 中断言
+- 错误页（设置读取失败 / 渲染异常）也渲染一条无导航的 `TitlebarFrame`，否则无边框窗口在启动失败时无法移动或关闭
+- `showMainWindow(bootOk, failure)`：多传一个原因字符串，Rust 在 `bootOk` 为假时打到 stderr（CI 冒烟的 `::error::` 分支据此区分「没加载」与「加载了但渲染的是错误页」）。前端的失败来源有三处：`getSettings` / `getAppInfo` 失败、首帧 3 s 未提交、错误边界捕获
+- `getAppInfo` 失败不再阻断启动（只记一条失败原因）：标题栏退回按 user agent 判断宿主 OS
+- macOS 红绿灯用 `traffic_light_position(18, 18)` 对齐 48px 标题栏中线（`WebviewWindowBuilder` 的 macOS 专有方法）
+- 截图脚本重构为 `scripts/lib/dev-preview.mjs`（Vite + Chrome 外壳）+ `screenshot.mjs`（加 `--variant`，文件名变为 `<route>-<variant>-<theme>-<lang>.png`）+ 新增 `ui-check.mjs`；对话框状态由 `src/dev/`（仅脚本经 dev server 动态加载，ESLint 禁止应用 import，`dist/` 中已确认无痕迹）提供
+- dev server 需预热 `src/dev/*.tsx`：探针首次引入 `cmdk` 会触发 Vite 重新预构建，页面因此拿到第二份 React（实测报 "Invalid hook call"）
+- 侧栏折叠按钮带 `pulse-gentle` 无限动画，Playwright 的稳定性检查永远不通过，`ui-check` 对它用 `force: true`；宽度断言等 Web Animations 的 `finished`
+
+审查后（trellis-check）：
+
+- **冒烟判定补洞**（已修）：窗口被销毁（WebView 崩溃、未拦截的关闭）时 tao 的事件循环本身以 0 退出（`tauri-runtime-wry` 的 `TaoWindowEvent::Destroyed` → `ControlFlow::Exit`），此前这会被冒烟当成「通过」，而冒烟是整个 CI 里唯一的端到端证据。现 `shell::on_run_event` 在冒烟模式且 `frontend_ready` 为假时打一行 stderr 并退 3，ci.yml 多一个分支说明这种情况。`showMainWindow` 的成功/失败语义不变（0 / 1）
+- ci.yml：退 1 的 `::error::` 文案补上「或 Xvfb 没能启动」——`xvfb-run` 自身在 Xvfb 启动失败时也退 1（Debian 的 `/usr/bin/xvfb-run`），两者无法用退出码区分，日志里有没有 `frontend startup failed` 才是判据。`status=0; cmd || status=$?` 在 `-eo pipefail` 下不会提前退出，124 / 1 / 3 / 其他四条分支齐全，actionlint + shellcheck 通过
+- `ui-check` 里一条恒为 `true` 的断言改为真正读 `data-maximized`（原先靠前一句 `waitFor()` 兜着，但 18/18 的计数里混了一条空断言）
+- 已核对、无问题：`show_main_window(boot_ok, failure)` ↔ `bridge.showMainWindow` ↔ `bridge.contract.test.ts`（参数键 `bootOk` / `failure`）；`showMainWindow` 在所有路径上都会被调用（`finally`），正常运行两种 `bootOk` 都显示窗口，`app.exit(0)` 只有「冒烟 + bootOk」与 `quitApp` 两处；能力清单对照 `@tauri-apps/api` 2.12.3 实际 invoke 的命令（`plugin:window|{minimize,toggle_maximize,close,is_maximized}`、`plugin:event|{listen,unlisten}`，拖动与双击走注入脚本的 `start_dragging` / `internal_toggle_maximize`，`getCurrentWindow()` 带 `skip: true` 不建窗）逐条齐全，且都存在于 `gen/schemas/desktop-schema.json`
+- `data-tauri-drag-region="deep"`（tauri 2.12.3 `src/window/scripts/drag.js`）：`isDragRegion` 自事件目标向上走，遇到可点元素（`BUTTON` / `A` / 有 `tabindex` / 交互 `role`）且其自身无该属性即返回 false——标题栏里的按钮照常可点、双击不会最大化（图标 svg 不是 `HTMLElement`，会被跳过，`[&_svg]:pointer-events-none` 之外的触发器也安全）；macOS 预留的 78px 在 deep 区域内，仍可拖动；下拉菜单内容都在 Portal 里，不在拖动区
+- 背景 canvas：DPR 用 `setTransform` + `max(1, round(w*dpr))`，0×0 与极小窗口不会让 `getImageData` 抛错；resize 监听与 debounce 定时器在卸载和主题切换时都清掉（StrictMode 双挂载不漏）；`getImageData/putImageData` 每次重绘一次，1438×828@dpr1 约 71k 次采样，受 150 ms debounce 约束
+- A14：`app-background` / `app-sidebar` / 标题栏与 `/home/a/projects/simprint` 对应文件逐段比对，结构、命名、画法都不同（我们是纯函数 + 常量表，Simprint 是单个 `useEffect` 内联），一致的只有视觉参数（6px 网格、0.012 点阵透明度、色值），这正是「视觉复刻」的目标；仓库内无任何字体文件，`public/` 只有自绘 `logo.svg`
+- `src/dev` 围栏：用探针文件验证 `@/dev/...` 与 `../dev/...` 的静态 import 会报错；`npm run build` 后 `dist/` 中检索 `dialogProbe` / `openDialogProbe` / `mount-dialog-probe` / `__FPL_MOCK__` / `createMockTransport` 均为 0
+
+判断留给用户（未改）：
+
+- `core:window:allow-show` 自 P4 起就在能力清单里，但前端从不调 `appWindow.show()`（显示窗口是 Rust 侧 `showMainWindow` 做的），属多余权限；要删需同步 design §7
+- 侧栏折叠时 `resizing`（内容淡出 300 ms）从点击那一刻开始，而宽度要等 `updateSettings` 回来才变；本机 SQLite 往返很快，但保存慢于 300 ms 时会先淡出再变宽，保存失败则白淡一次
+- 网格线没有 Simprint 的 +0.5px 偏移（`lineWidth 0.5` 落在整数坐标上会跨像素，线更淡），属视觉取向
+- macOS `traffic_light_position(18, 18)`：tao 把 y 当作按钮组上方的留白（`title_bar_frame_height = 按钮高 + y`），按钮高约 15px 时组中线落在 25.5px，48px 标题栏的中线是 24px——差 1~2px，需真机核对
+- ESLint 的 `no-restricted-imports` 只管静态 import，动态 `import()`（bridge 加载 mock 正是靠它）绕得过去，最终仍靠 `dist/` 检索兜底
+- Tailwind 会扫描 `src/dev/*.tsx`，其中用到的工具类会进生产 CSS（目前探针只用应用自身组件的类，没有多余产出）
 
 **提交**：`feat(ui): app layout — titlebar, sidebar, background`
 
